@@ -1,6 +1,23 @@
 [package]
 name = "bd"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2024"
+description = "A small blogging system hosted on git."
+license = "GPL-3.0-only"
+repository = "https://www.github.com/brandonfglx/bd"
+readme = "README.md"
 
 [dependencies]
+anyhow = "1.0.104"
+clap = { version = "4.6.8", features = ["derive"] }
+pulldown-cmark = "0.13.6"
+serde = { version = "1.0.229", features = ["derive"] }
+slug = "0.1.6"
+time = { version = "0.3.55", features = ["formatting", "macros", "parsing"] }
+toml = "1.2.2"
+walkdir = "2.5.1"
+
+[dev-dependencies]
+assert_cmd = "2.2.2"
+predicates = "3.1.4"
+tempfile = "3.27.0"
