@@ -18,12 +18,12 @@ const DATE_FORMAT: &[FormatItem<'static>] = format_description!("[year]-[month]-
 #[serde(deny_unknown_fields)]
 pub struct PageFile {
 	pub title: String,
-	#[serde(default)] 
+	#[serde(default)]
 	pub description: String,
 	pub date: String,
-	#[serde(default)] 
+	#[serde(default)]
 	pub draft: bool,
-	#[serde(default = "default_content")] 
+	#[serde(default = "default_content")]
 	pub content: String,
 }
 
@@ -62,7 +62,8 @@ pub fn today() -> Date {
 
 // Formats the date if possible
 pub fn format_date(date: Date) -> Result<String> {
-	date.format(DATE_FORMAT).context("format_date: cannot format date into YYYY-MM-DD")
+	date.format(DATE_FORMAT)
+		.context("format_date: cannot format date into YYYY-MM-DD")
 }
 
 // Extract a page from the given directory (page.md with metadata in page.toml)
@@ -75,33 +76,71 @@ pub fn load_page(dir: &Path) -> Result<Page> {
 
 	let title = file.title.trim();
 	if title.is_empty() {
-		bail!("load_page: page title cannot be empty in {}", meta_path.display());
+		bail!(
+			"load_page: page title cannot be empty in {}",
+			meta_path.display()
+		);
 	}
 
-	let slug = dir.file_name().and_then(|name| name.to_str()).ok_or_else(|| anyhow!("load_page: page directory name is not valid UTF-8: {}", dir.display()))?;
-	slug::validate(&slug).with_context(|| format!("load_page: invalid page directory {}", dir.display()))?;
+	let slug = dir
+		.file_name()
+		.and_then(|name| name.to_str())
+		.ok_or_else(|| {
+			anyhow!(
+				"load_page: page directory name is not valid UTF-8: {}",
+				dir.display()
+			)
+		})?;
+	slug::validate(slug)
+		.with_context(|| format!("load_page: invalid page directory {}", dir.display()))?;
 
 	let date = parse_date(&file.date).with_context(|| format!("in {}", meta_path.display()))?;
 	let date_str = format_date(date)?;
 
 	let rel = Path::new(&file.content);
 	if rel.as_os_str().is_empty() {
-		bail!("load_page: content path cannot be empty in {}", meta_path.display());
+		bail!(
+			"load_page: content path cannot be empty in {}",
+			meta_path.display()
+		);
 	}
 
-	if rel.is_absolute() || rel.components().any(|comp| !matches!(comp, Component::Normal(_))) {
-		bail!("load_page: content path must be a relative path without '.' or '..' in {}", meta_path.display());
+	if rel.is_absolute()
+		|| rel
+			.components()
+			.any(|comp| !matches!(comp, Component::Normal(_)))
+	{
+		bail!(
+			"load_page: content path must be a relative path without '.' or '..' in {}",
+			meta_path.display()
+		);
 	}
 
 	let content_path = dir.join(rel);
 	if !content_path.is_file() {
-		bail!("load_page: content file not found: {} (referenced by {})", content_path.display(), meta_path.display());
+		bail!(
+			"load_page: content file not found: {} (referenced by {})",
+			content_path.display(),
+			meta_path.display()
+		);
 	}
 
-	let dir_canonical = dir.canonicalize().with_context(|| format!("load_page: failed to resolve {}", dir.display()))?;
-	let content_canonical = content_path.canonicalize().with_context(|| format!("load_page: failed to resolve {}", dir.display()))?;
+	if content_path == Path::new("page.toml") {
+		bail!("load_page: content_path cannot be page.toml");
+	}
+
+	let dir_canonical = dir
+		.canonicalize()
+		.with_context(|| format!("load_page: failed to resolve {}", dir.display()))?;
+	let content_canonical = content_path
+		.canonicalize()
+		.with_context(|| format!("load_page: failed to resolve {}", content_path.display()))?;
 	if !content_canonical.starts_with(&dir_canonical) {
-		bail!("load_page: content file {} is outside the page directory {}", content_path.display(), dir.display());
+		bail!(
+			"load_page: content file {} is outside the page directory {}",
+			content_path.display(),
+			dir.display()
+		);
 	}
 
 	Ok(Page {
@@ -113,7 +152,7 @@ pub fn load_page(dir: &Path) -> Result<Page> {
 		draft: file.draft,
 		dir: dir.to_path_buf(),
 		content_rel: rel.to_path_buf(),
-		content_path
+		content_path,
 	})
 }
 
@@ -127,7 +166,9 @@ pub fn load_pages(root: &Path, output: &Path) -> Result<Vec<Page>> {
 	let mut pages = Vec::new();
 
 	for entry in entries {
-		let file_type = entry.file_type().with_context(|| format!("load_pages: failed to inspect {}", entry.path().display()))?;
+		let file_type = entry
+			.file_type()
+			.with_context(|| format!("load_pages: failed to inspect {}", entry.path().display()))?;
 		if !file_type.is_dir() {
 			continue;
 		}
@@ -142,27 +183,42 @@ pub fn load_pages(root: &Path, output: &Path) -> Result<Vec<Page>> {
 
 		if dir == output {
 			if is_page {
-				bail!("load_pages: build output {} is a page directory", output.display());
+				bail!(
+					"load_pages: build output {} is a page directory",
+					output.display()
+				);
 			}
 			continue;
 		}
 
 		if !is_page {
 			if dir.join(DEFAULT_CONTENT).is_file() {
-				bail!("load_pages: found {} but no {} in {}", DEFAULT_CONTENT, PAGE_META, dir.display());
+				bail!(
+					"load_pages: found {} but no {} in {}",
+					DEFAULT_CONTENT,
+					PAGE_META,
+					dir.display()
+				);
 			}
 			continue;
 		}
 
 		if output.starts_with(&dir) {
-			bail!("load_pages: build output {} is inside page directory {}", output.display(), dir.display());
+			bail!(
+				"load_pages: build output {} is inside page directory {}",
+				output.display(),
+				dir.display()
+			);
 		}
 
 		pages.push(load_page(&dir)?);
 	}
 
 	pages.sort_by(|left, right| {
-		right.date.cmp(&left.date).then_with(|| left.slug.cmp(&right.slug))
+		right
+			.date
+			.cmp(&left.date)
+			.then_with(|| left.slug.cmp(&right.slug))
 	});
 
 	Ok(pages)

@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 #[derive(Debug, clap::Parser)]
 #[command(name = "bd", version, about = "A small blogging system hosted on git.")]
 pub struct Cli {
@@ -10,21 +8,28 @@ pub struct Cli {
 #[derive(Debug, clap::Subcommand)]
 pub enum Command {
 	Init {
-		location: std::path::PathBuf
+		location: std::path::PathBuf,
 	},
 	Add {
 		title: String,
-		#[arg(long)] slug: Option<String>,
-		#[arg(long)] date: Option<String>,
-		#[arg(long)] draft: bool,
+		#[arg(long)]
+		slug: Option<String>,
+		#[arg(long)]
+		date: Option<String>,
+		#[arg(long)]
+		draft: bool,
 	},
 	Rm {
 		slug: String,
-		#[arg(short, long)] force: bool,
+		#[arg(short, long)]
+		force: bool,
 	},
 	Build {
-		#[arg(long)] drafts: bool,
-		#[arg(long, value_name = "DIR")] output: Option<std::path::PathBuf>,
-		#[arg(short, long)] verbose: bool,
+		#[arg(long)]
+		drafts: bool,
+		#[arg(long, value_name = "DIR")]
+		output: Option<std::path::PathBuf>,
+		#[arg(short, long)]
+		verbose: bool,
 	},
 }

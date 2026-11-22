@@ -8,7 +8,7 @@ use crate::config::BlogConfig;
 use crate::page::Page;
 
 pub struct Renderer {
-	env: Environment<'static>
+	env: Environment<'static>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -27,7 +27,7 @@ impl<'a> From<&'a Page> for PostView<'a> {
 			title: &page.title,
 			description: &page.description,
 			date: &page.date_str,
-			draft: page.draft
+			draft: page.draft,
 		}
 	}
 }
@@ -41,13 +41,14 @@ impl Renderer {
 			.context("failed to load index.html template")?;
 		env.add_template("post.html", include_str!("templates/post.html"))
 			.context("failed to load post.html template")?;
-		
+
 		Ok(Self { env })
 	}
 
 	pub fn index(&self, blog: &BlogConfig, posts: &[PostView<'_>]) -> Result<String> {
 		let year = OffsetDateTime::now_utc().year();
-		self.env.get_template("index.html")
+		self.env
+			.get_template("index.html")
 			.context("failed to find index.html template")?
 			.render(context! {
 				blog => Serde(blog),
@@ -60,7 +61,8 @@ impl Renderer {
 
 	pub fn post(&self, blog: &BlogConfig, post: &PostView<'_>, content: &str) -> Result<String> {
 		let year = OffsetDateTime::now_utc().year();
-		self.env.get_template("post.html")
+		self.env
+			.get_template("post.html")
 			.context("failed to find post.html template")?
 			.render(context! {
 				blog => Serde(blog),

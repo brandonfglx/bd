@@ -9,13 +9,13 @@ pub const BLOG_CONFIG: &str = "blog.toml";
 #[serde(deny_unknown_fields)]
 pub struct BlogConfig {
 	pub title: String,
-	#[serde(default)] 
+	#[serde(default)]
 	pub description: String,
-	#[serde(default)] 
+	#[serde(default)]
 	pub author: String,
-	#[serde(default = "default_language")] 
+	#[serde(default = "default_language")]
 	pub language: String,
-	#[serde(default)] 
+	#[serde(default)]
 	pub build: BuildConfig,
 }
 
@@ -52,14 +52,19 @@ impl BlogConfig {
 		}
 
 		if config.language.trim().is_empty() {
-			bail!("config: blog language cannot be empty in {}", path.display());
+			bail!(
+				"config: blog language cannot be empty in {}",
+				path.display()
+			);
 		}
 
 		Ok(config)
 	}
 
 	pub fn find_root(start: &Path) -> Result<PathBuf> {
-		let start = start.canonicalize().with_context(|| format!("find_root: failed to resolve {}", start.display()))?;
+		let start = start
+			.canonicalize()
+			.with_context(|| format!("find_root: failed to resolve {}", start.display()))?;
 
 		for dir in start.ancestors() {
 			if dir.join(BLOG_CONFIG).is_file() {
@@ -67,6 +72,9 @@ impl BlogConfig {
 			}
 		}
 
-		bail!("find_root: No blog.toml found in {} or any parent directory; run `bd init <LOCATION>` first!", start.display())
+		bail!(
+			"find_root: No blog.toml found in {} or any parent directory; run `bd init <LOCATION>` first!",
+			start.display()
+		)
 	}
 }
