@@ -53,7 +53,7 @@
 </head>
 <body>
 	<header>
-		<a href="{{ home_url }}">{{ blog.title }}</a>
+		<a href="{{ home_url|safe }}">{{ blog.title }}</a>
 	</header>
 	<main>
 		{% block content %}{% endblock %}
