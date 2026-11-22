@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="{{ blog.language }}">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>{% block title %}{{ blog.title }}{% endblock %}</title>
+	{% block description %}{% if blog.description %}<meta name="description" content="{{ blog.description }}">{% endif %}{% endblock %}
+	<style>
+		body {
+			max-width: 42rem;
+			margin: 2rem auto;
+			padding: 0 1rem;
+			font: 1.05rem/1.6 system-ui, sans-serif;
+		}
+
+		header a {
+			font-weight: 600;
+			text-decoration: none;
+		}
+
+		h1, h2, h3 {
+			line-height: 1.2;
+		}
+
+		time, .description {
+			color: #6b7280
+		}
+
+		pre {
+			overflow-x: auto;
+			padding: .75rem;
+			background: #f3f4f6;
+		}
+
+		code {
+			font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+		}
+
+		img, video {
+			max-width: 100%;
+			height: auto;
+		}
+
+		.posts {
+			padding: 0;
+			list-style: none;
+		}
+
+		.posts li {
+			margin-bottom: 1.5rem;
+		}
+	</style>
+</head>
+<body>
+	<header>
+		<a href="{{ home_url }}">{{ blog.title }}</a>
+	</header>
+	<main>
+		{% block content %}{% endblock %}
+	</main>
+	{% if blog.author %}
+	<footer>
+		<p>&copy; {{ year }} {{ blog.author }}</p>
+	</footer>
+	{% endif %}
+</body>
+</html>
