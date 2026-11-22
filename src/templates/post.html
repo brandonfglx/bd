@@ -6,14 +6,14 @@
 
 {% block content %}
 <article>
-	<header>
+	<header class="page-header">
 		<h1>{{ post.title }}</h1>
-		<p>
-			<time datetime="{{ post.date }}">{{ post.date }}</time>
-			{% if post.draft %} &middot; <strong>draft</strong>{% endif %}
+		<p class="post-meta">
+			<time datetime="{{ post.date }}">{{ post.date_display }}</time>
+			{% if post.draft %}<span class="draft">&middot; <strong>draft</strong></span>{% endif %}
 		</p>
 		{% if post.description %}
-		<p>{{ post.description }}</p>
+		<p class="description">{{ post.description }}</p>
 		{% endif %}
 	</header>
 	<div class="content">
