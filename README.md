@@ -16,13 +16,26 @@
 4. Launch bd using the terminal: `./bd --help` (Unix)
 
 ## Features
- - init: intializes a new bd directory
- - add: creates a new page with the given name
+ - init: intializes a new bd directory and scaffolds templates/ and static/
+ - add: creates a new page using the local date and prints the UTC offset
  - rm: removes a page with the given name
- - build: generates a static build of the blog
+ - build: generates a static build, copying static/ and applying templates/ overrides
 
 ## Technicals
 
+## Layout
+ - blog.toml - site config (title, description, author, language, build)
+ - slug/page.toml - page metadata (title, description, date, draft, content)
+ - slug/page.md - page content by default; other files in the page directory are copied as-is
+ - templates/ - optional overrides for base.html, index.html, and post.html
+ - static/ - copied to the build root (style.css, CNAME, robots.txt, 404.html, etc.)
+
+Template partials may use `.html`, `.htm`, `.jinja`, `.j2`, `.txt`, or `.xml` extensions.
+
+## Build Safety
+`bd build` renders into a temporary directory next to the output and swaps it into place. If rendering or writing fails, the previous build (if present) is left untouched.
+
+The output directory contains a `.bd-output` marker. `bd` only replaces a directory that contains this marker, so builds older than `v0.0.2` will need to use `bd build --force` to replace a directory that bd cannot verify that it created.
 
 ## FAQ
  - Test
