@@ -10,10 +10,13 @@
 > bd is currently in alpha. Some features may not be complete! Check out the change log [here.](./CHANGELOG.md)
 
 ## Quick Start
-
+Download the latest release builds [here.](https://github.com/brandonfglx/bd/releases/latest)
 
 ## Features
-
+ - init: intializes a new bd directory
+ - add: creates a new page with the given name
+ - rm: removes a page with the given name
+ - build: generates a static build of the blog
 
 ## Technicals
 

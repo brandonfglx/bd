@@ -34,24 +34,25 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.tag || github.ref }}
+          ref: ${{ inputs.release_tag || github.ref }}
       - uses: dtolnay/rust-toolchain@stable
+        targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
       - name: Build
-        run: cargo build --release --locked
+        run: cargo build --release --locked --target ${{ matrix.target }}
       - name: Package (Unix)
         if: matrix.archive == "tar.gz"
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p dist
-          tar -czf "dist/bd-${{ matrix.target }}.tar.gz" -C target/release bd
+          tar -czf "dist/bd-${{ matrix.target }}.tar.gz" -C target/${{ matrix.target }}/release bd
       - name: Package (Windows)
         if: matrix.archive == "zip"
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          Compress-Archive -Path target/release/bd.exe -DestinationPath "dist/bd-${{ matrix.target }}.zip"
+          Compress-Archive -Path target/${{ matrix.target }}/release/bd.exe -DestinationPath "dist/bd-${{ matrix.target }}.zip"
       - uses: actions/upload-artifact@7
         with:
           name: bd-${{ matrix.target }}
@@ -63,7 +64,7 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifactv8
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
@@ -73,6 +74,6 @@ jobs:
           sha256sum * > SHA256SUMS
       - uses: softprops/action-gh-release@v3
         with:
-          tag_name: ${{ inputs.tag || github.ref_name }}
+          tag_name: ${{ inputs.release_tag || github.ref_name }}
           files: dist/*
           generate_release_notes: true
