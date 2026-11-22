@@ -1,6 +1,5 @@
 use std::fs;
 use std::path::Path;
-use std::process::Command;
 
 use anyhow::{Context, Result, bail};
 
@@ -8,6 +7,7 @@ use crate::commands::add::default_page_markdown;
 use crate::config::{BLOG_CONFIG, BlogConfig, BuildConfig};
 use crate::page::{PAGE_META, PageFile, format_date, today};
 use crate::render::{BASE_TEMPLATE, INDEX_TEMPLATE, POST_TEMPLATE};
+use crate::git;
 
 const GITIGNORE: &str = include_str!("../base/.gitignore");
 const PAGES_WORKFLOW: &str = include_str!("../base/pages.yml");
@@ -73,7 +73,7 @@ pub fn run(location: &Path) -> Result<()> {
 
 	let needs_git_init = !location.join(".git").exists();
 	if needs_git_init {
-		check_git()?;
+		git::check()?;
 	}
 
 	fs::create_dir_all(&location)
@@ -167,7 +167,7 @@ pub fn run(location: &Path) -> Result<()> {
 	})?;
 
 	if needs_git_init {
-		git_init(&location)?;
+		git::init(&location)?;
 	}
 
 	println!("Initialized bd blog in {}", location.display());
@@ -177,42 +177,10 @@ pub fn run(location: &Path) -> Result<()> {
 	println!(
 		"    2. Edit the blog.toml with your own information and edit page.md inside each directory"
 	);
+	println!("    3. Run `bd build` and then `bd preview` to check the site locally using localhost.");
 	println!(
 		"    3. When done, execute `bd publish` (which may prompt to add a remote HTTP or SSH) - make sure Repo Settings -> Pages -> Source: GitHub Actions."
 	);
-
-	Ok(())
-}
-
-fn check_git() -> Result<()> {
-	let output = Command::new("git")
-		.arg("--version")
-		.output()
-		.context("failed to run `git --version`; git may not be installed: see FAQ at https://github.com/brandonfglx/bd/blob/main/README.md")?;
-	if !output.status.success() {
-		bail!(
-			"`git --version` failed: {}",
-			String::from_utf8_lossy(&output.stderr).trim()
-		);
-	}
-
-	Ok(())
-}
-
-fn git_init(location: &Path) -> Result<()> {
-	let output = Command::new("git")
-		.arg("init")
-		.arg("-b")
-		.arg("main")
-		.current_dir(location)
-		.output()
-		.context("failed to run `git init`; git may not be installed: see FAQ at https://github.com/brandonfglx/bd/blob/main/README.md")?;
-	if !output.status.success() {
-		bail!(
-			"`git init -b main` failed: {}",
-			String::from_utf8_lossy(&output.stderr).trim()
-		);
-	}
 
 	Ok(())
 }

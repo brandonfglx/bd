@@ -14,24 +14,51 @@ const OUTPUT_MARKER: &str = ".bd-output";
 const STAGING_PREFIX: &str = ".bd-build-";
 const BACKUP_PREFIX: &str = ".bd-old-";
 
+#[derive(Debug, Clone, Default)]
+pub struct BuildArgs {
+	pub drafts: bool,
+	pub output: Option<PathBuf>,
+	pub verbose: bool,
+	pub force: bool,
+}
+
+#[derive(Debug)]
+pub struct BuildOutcome {
+	pub output: PathBuf,
+	pub pages: usize,
+	pub skipped: usize,
+}
+
 pub fn run(
 	include_drafts_flag: bool,
 	output_override: Option<&Path>,
 	verbose: bool,
 	force: bool,
 ) -> Result<()> {
+	let outcome = build(&BuildArgs {
+		drafts: include_drafts_flag,
+		output: output_override.map(Path::to_path_buf),
+		verbose,
+		force,
+	})?;
+	print_summary(&outcome);
+	Ok(())
+}
+
+pub fn build(args: &BuildArgs) -> Result<BuildOutcome> {
 	let cwd = std::env::current_dir().context("failed to determine current directory")?;
 	let root = BlogConfig::find_root(&cwd)?;
 	let blog = BlogConfig::load(&root)?;
 
-	let output_rel = output_override
-		.map(Path::to_path_buf)
+	let output_rel = args
+		.output
+		.clone()
 		.unwrap_or_else(|| blog.build.output.clone());
 	let output = resolve_output(&root, &output_rel)?;
-	let include_drafts = include_drafts_flag || blog.build.include_drafts;
+	let include_drafts = args.drafts || blog.build.include_drafts;
 
 	let all_pages = load_pages(&root, &output)?;
-	validate_output(&output, force)?;
+	validate_output(&output, args.force)?;
 	let total = all_pages.len();
 	let page_slugs: Vec<String> = all_pages.iter().map(|page| page.slug.clone()).collect();
 	let pages: Vec<Page> = all_pages
@@ -71,25 +98,31 @@ pub fn run(
 		&rendered,
 		&index,
 		&page_slugs,
-		verbose,
+		args.verbose,
 	)?;
-	staging.commit(&output, force)?;
+	staging.commit(&output, args.force)?;
 
+	Ok(BuildOutcome {
+		output,
+		pages: pages.len(),
+		skipped,
+	})
+}
+
+pub fn print_summary(outcome: &BuildOutcome) {
 	println!(
 		"Built {} page{} to {}",
-		pages.len(),
-		if pages.len() == 1 { "" } else { "s" },
-		output.display()
+		outcome.pages,
+		if outcome.pages == 1 { "" } else { "s" },
+		outcome.output.display()
 	);
-	if skipped > 0 {
+	if outcome.skipped > 0 {
 		println!(
 			"Skipped {} draft{}.",
-			skipped,
-			if skipped == 1 { "" } else { "s" }
+			outcome.skipped,
+			if outcome.skipped == 1 { "" } else { "s" }
 		);
 	}
-
-	Ok(())
 }
 
 fn resolve_output(root: &Path, rel: &Path) -> Result<PathBuf> {
@@ -533,6 +566,7 @@ mod tests {
 			description: String::new(),
 			date: parse_date("2024-01-02").unwrap(),
 			date_str: "2024-01-02".to_string(),
+			date_display: "January 2, 2024".to_string(),
 			draft: false,
 			content_rel: PathBuf::from("page.md"),
 			content_path: dir.join("page.md"),
