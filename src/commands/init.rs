@@ -90,8 +90,9 @@ pub fn run(location: &Path) -> Result<()> {
 		draft: false,
 		content: "page.md".to_string(),
 	};
-	let page_toml = toml::to_string_pretty(&page)
-		.context(format!("init: failed to serialize {DEFAULT_PAGE}/page.toml"))?;
+	let page_toml = toml::to_string_pretty(&page).context(format!(
+		"init: failed to serialize {DEFAULT_PAGE}/page.toml"
+	))?;
 	fs::write(page_dir.join(PAGE_META), page_toml).with_context(|| {
 		format!(
 			"init: failed to write {}",
