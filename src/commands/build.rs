@@ -22,13 +22,14 @@ pub fn run(include_drafts_flag: bool, output_override: Option<&Path>, verbose: b
 
 	let all_pages = load_pages(&root, &output)?;
 	let total = all_pages.len();
+	let page_slugs: Vec<String> = all_pages.iter().map(|page| page.slug.clone()).collect();
 	let pages: Vec<Page> = all_pages
 		.into_iter()
 		.filter(|page| include_drafts || !page.draft)
 		.collect();
 	let skipped = total - pages.len();
 
-	let renderer = Renderer::new()?;
+	let renderer = Renderer::with_root(&root)?;
 	let mut rendered = Vec::with_capacity(pages.len());
 
 	for page in &pages {
@@ -52,6 +53,8 @@ pub fn run(include_drafts_flag: bool, output_override: Option<&Path>, verbose: b
 		.with_context(|| format!("failed to create {}", output.display()))?;
 	fs::write(output.join(".nojekyll"), "")
 		.with_context(|| format!("failed to create {}", output.join(".nojekyll").display()))?;
+
+	copy_static(&root, &output, &page_slugs, verbose)?;
 
 	for (page, html) in &rendered {
 		let page_output = output.join(&page.slug);
@@ -102,6 +105,13 @@ fn resolve_output(root: &Path, rel: &Path) -> Result<PathBuf> {
 
 	if rel.is_absolute() {
 		bail!("build output must be relative to the blog root");
+	}
+
+	if let Some(Component::Normal(first)) = rel.components().next() {
+		let first = first.to_string_lossy();
+		if first == "static" || first == "templates" {
+			bail!("build output cannot be inside the {first} directory");
+		}
 	}
 
 	for comp in rel.components() {
@@ -163,6 +173,105 @@ fn remove_existing_output(output: &Path) -> Result<()> {
 	}
 
 	fs::remove_dir_all(output).with_context(|| format!("failed to remove {}", output.display()))
+}
+
+fn copy_static(root: &Path, output: &Path, page_slugs: &[String], verbose: bool) -> Result<usize> {
+	let static_dir = root.join("static");
+	let metadata = match fs::symlink_metadata(&static_dir) {
+		Ok(metadata) => metadata,
+		Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+		Err(error) => {
+			return Err(error)
+				.with_context(|| format!("failed to inspect {}", static_dir.display()));
+		}
+	};
+
+	if metadata.file_type().is_symlink() {
+		bail!(
+			"cannot use symlink as static directory: {}",
+			static_dir.display()
+		);
+	}
+
+	if !metadata.is_dir() {
+		bail!("static path is not a directory: {}", static_dir.display());
+	}
+
+	let mut copied = 0;
+
+	for entry in WalkDir::new(&static_dir)
+		.follow_links(false)
+		.sort_by_file_name()
+	{
+		let entry = entry.with_context(|| format!("failed to walk {}", static_dir.display()))?;
+		let rel = entry
+			.path()
+			.strip_prefix(&static_dir)
+			.with_context(|| format!("failed to relativize {}", entry.path().display()))?;
+
+		if rel.as_os_str().is_empty() {
+			continue;
+		}
+
+		let file_name = rel.file_name().and_then(|name| name.to_str()).unwrap_or("");
+		if file_name == ".DS_Store" || file_name == "Thumbs.db" || file_name == ".gitkeep" {
+			continue;
+		}
+
+		if entry.file_type().is_symlink() {
+			if verbose {
+				eprintln!("warning: skipping symlink {}", entry.path().display());
+			}
+			continue;
+		}
+
+		if !entry.file_type().is_file() {
+			continue;
+		}
+
+		validate_static_path(rel, page_slugs)?;
+
+		let dest = output.join(rel);
+		if let Some(parent) = dest.parent() {
+			fs::create_dir_all(parent)
+				.with_context(|| format!("failed to create {}", parent.display()))?;
+		}
+
+		fs::copy(entry.path(), &dest).with_context(|| {
+			format!(
+				"failed to copy {} to {}",
+				entry.path().display(),
+				dest.display()
+			)
+		})?;
+		copied += 1;
+	}
+
+	Ok(copied)
+}
+
+fn validate_static_path(rel: &Path, page_slugs: &[String]) -> Result<()> {
+	let Some(Component::Normal(first)) = rel.components().next() else {
+		bail!("static path must be relative: {}", rel.display());
+	};
+
+	let first = first.to_string_lossy();
+	if first == "index.html" || first == ".nojekyll" {
+		bail!(
+			"static path {} conflicts with a generated file",
+			rel.display()
+		);
+	}
+
+	if page_slugs.iter().any(|slug| slug.as_str() == first) {
+		bail!(
+			"static path {} conflicts with page directory {}",
+			rel.display(),
+			first
+		);
+	}
+
+	Ok(())
 }
 
 fn copy_assets(page: &Page, out_dir: &Path, verbose: bool) -> Result<usize> {
@@ -277,6 +386,22 @@ mod tests {
 	}
 
 	#[test]
+	fn resolve_output_rejects_static_and_template_directories() {
+		let temp = tempfile::tempdir().unwrap();
+		let root = temp.path().canonicalize().unwrap();
+
+		for rel in [
+			Path::new("static"),
+			Path::new("static/site"),
+			Path::new("templates"),
+			Path::new("templates/site"),
+		] {
+			let error = resolve_output(&root, rel).unwrap_err().to_string();
+			assert!(error.contains("inside the"), "{error}");
+		}
+	}
+
+	#[test]
 	fn resolve_output_accepts_nested_path() {
 		let temp = tempfile::tempdir().unwrap();
 		let root = temp.path().canonicalize().unwrap();
@@ -338,6 +463,110 @@ mod tests {
 
 		assert!(error.contains("refusing to use symlink"), "{error}");
 		assert!(target.is_dir());
+	}
+
+	#[test]
+	fn copy_static_copies_files_and_skips_noise() {
+		let temp = tempfile::tempdir().unwrap();
+		let root = temp.path();
+		let static_dir = root.join("static");
+		fs::create_dir_all(static_dir.join("nested")).unwrap();
+		fs::write(static_dir.join("style.css"), "body {}").unwrap();
+		fs::write(static_dir.join("nested/note.txt"), "hello").unwrap();
+		fs::write(static_dir.join(".gitkeep"), "").unwrap();
+		fs::write(static_dir.join(".DS_Store"), "ignored").unwrap();
+		fs::write(static_dir.join("Thumbs.db"), "ignored").unwrap();
+
+		let out = root.join("out");
+		fs::create_dir(&out).unwrap();
+		let copied = copy_static(root, &out, &[], false).unwrap();
+
+		assert_eq!(copied, 2);
+		assert_eq!(
+			fs::read_to_string(out.join("style.css")).unwrap(),
+			"body {}"
+		);
+		assert!(!out.join(".gitkeep").exists());
+		assert!(!out.join(".DS_Store").exists());
+		assert!(!out.join("Thumbs.db").exists());
+	}
+
+	#[test]
+	fn copy_static_rejects_generated_file_conflicts() {
+		for rel in ["index.html", ".nojekyll"] {
+			let temp = tempfile::tempdir().unwrap();
+			let root = temp.path();
+			let static_dir = root.join("static");
+			fs::create_dir(&static_dir).unwrap();
+			fs::write(static_dir.join(rel), "x").unwrap();
+
+			let out = root.join("out");
+			fs::create_dir(&out).unwrap();
+			let error = copy_static(root, &out, &[], false).unwrap_err().to_string();
+
+			assert!(error.contains("conflicts with a generated file"), "{error}");
+		}
+	}
+
+	#[test]
+	fn copy_static_rejects_page_conflicts() {
+		let temp = tempfile::tempdir().unwrap();
+		let root = temp.path();
+		let static_dir = root.join("static");
+		fs::create_dir_all(static_dir.join("post")).unwrap();
+		fs::write(static_dir.join("post/file.txt"), "x").unwrap();
+
+		let out = root.join("out");
+		fs::create_dir(&out).unwrap();
+		let error = copy_static(root, &out, &["post".to_string()], false)
+			.unwrap_err()
+			.to_string();
+
+		assert!(error.contains("conflicts with page directory"), "{error}");
+	}
+
+	#[test]
+	fn copy_static_missing_directory_is_ok() {
+		let temp = tempfile::tempdir().unwrap();
+		let root = temp.path();
+		let out = root.join("out");
+		fs::create_dir(&out).unwrap();
+
+		assert_eq!(copy_static(root, &out, &[], false).unwrap(), 0);
+	}
+
+	#[test]
+	fn copy_static_rejects_static_file() {
+		let temp = tempfile::tempdir().unwrap();
+		let root = temp.path();
+		fs::write(root.join("static"), "not a directory").unwrap();
+
+		let out = root.join("out");
+		fs::create_dir(&out).unwrap();
+		let error = copy_static(root, &out, &[], false).unwrap_err().to_string();
+
+		assert!(error.contains("not a directory"), "{error}");
+	}
+
+	#[cfg(unix)]
+	#[test]
+	fn copy_static_skips_symlinks() {
+		use std::os::unix::fs::symlink;
+
+		let temp = tempfile::tempdir().unwrap();
+		let root = temp.path();
+		let static_dir = root.join("static");
+		fs::create_dir(&static_dir).unwrap();
+		let outside = root.join("outside.txt");
+		fs::write(&outside, "outside").unwrap();
+		symlink(&outside, static_dir.join("link.txt")).unwrap();
+
+		let out = root.join("out");
+		fs::create_dir(&out).unwrap();
+		let copied = copy_static(root, &out, &[], false).unwrap();
+
+		assert_eq!(copied, 0);
+		assert!(!out.join("link.txt").exists());
 	}
 
 	#[test]

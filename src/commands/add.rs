@@ -3,7 +3,7 @@ use std::fs;
 use anyhow::{Context, Result, bail};
 
 use crate::config::BlogConfig;
-use crate::page::{PAGE_META, PageFile, format_date, parse_date, today};
+use crate::page::{PAGE_META, PageFile, format_date, format_offset, local_now, parse_date};
 use crate::slug;
 
 const PAGE_MD: &str = include_str!("../base/page.md");
@@ -39,17 +39,22 @@ pub fn run(title: &str, slug_arg: Option<&str>, date_arg: Option<&str>, draft: b
 		bail!("page directory already exists: {}", dir.display());
 	}
 
-	let date = match date_arg {
-		Some(value) => {
-			parse_date(value).with_context(|| format!("invalid --date value {value:?}"))?
+	let (date, local_offset) = match date_arg {
+		Some(value) => (
+			parse_date(value).with_context(|| format!("invalid --date value {value:?}"))?,
+			None,
+		),
+		None => {
+			let (date, offset) = local_now();
+			(date, Some(offset))
 		}
-		None => today(),
 	};
 
+	let date_str = format_date(date)?;
 	let page = PageFile {
 		title: title.to_string(),
 		description: String::new(),
-		date: format_date(date)?,
+		date: date_str.clone(),
 		draft,
 		content: "page.md".to_string(),
 	};
@@ -70,7 +75,11 @@ pub fn run(title: &str, slug_arg: Option<&str>, date_arg: Option<&str>, draft: b
 		return Err(error);
 	}
 
-	println!("Created page \"{slug}\" at {}", dir.display());
+	let date_note = match local_offset {
+		Some(offset) => format!("(date {date_str}, {})", format_offset(offset)),
+		None => format!("(date {date_str})"),
+	};
+	println!("Created page \"{slug}\" at {} {date_note}", dir.display());
 	Ok(())
 }
 

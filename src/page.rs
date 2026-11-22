@@ -3,10 +3,9 @@ use std::path::{Component, Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow, bail};
 use serde::{Deserialize, Serialize};
-use time::Date;
-use time::OffsetDateTime;
 use time::format_description::FormatItem;
 use time::macros::format_description;
+use time::{Date, OffsetDateTime, UtcOffset};
 
 use crate::slug;
 
@@ -55,9 +54,28 @@ pub fn parse_date(value: &str) -> Result<Date> {
 		.with_context(|| format!("parse_date: invalid date {value:?}; expected YYYY-MM-DD"))
 }
 
-// Gets today's date in UTC
+// Returns the local date and UTC offset, falling back to UTC when the platform cannot determine the local offset
+pub fn local_now() -> (Date, UtcOffset) {
+	match OffsetDateTime::now_local() {
+		Ok(now) => (now.date(), now.offset()),
+		Err(_) => {
+			let now = OffsetDateTime::now_utc();
+			(now.date(), now.offset())
+		}
+	}
+}
+
+// Gets today's date in local time
 pub fn today() -> Date {
-	OffsetDateTime::now_utc().date()
+	local_now().0
+}
+
+// Formats an offset as UTC+HH:MM or UTC-HH:MM
+pub fn format_offset(offset: UtcOffset) -> String {
+	let sign = if offset.is_negative() { '-' } else { '+' };
+	let hours = offset.whole_hours().abs();
+	let mins = offset.minutes_past_hour().abs();
+	format!("UTC{sign}{hours:02}:{mins:02}")
 }
 
 // Formats the date if possible
@@ -174,7 +192,11 @@ pub fn load_pages(root: &Path, output: &Path) -> Result<Vec<Page>> {
 		}
 
 		let name = entry.file_name();
-		if name.to_string_lossy().starts_with(".") {
+		let name_str = name.to_string_lossy();
+		if name_str.starts_with(".") {
+			continue;
+		}
+		if name_str == "static" || name_str == "templates" {
 			continue;
 		}
 
@@ -250,6 +272,16 @@ mod tests {
 	}
 
 	#[test]
+	fn format_offset_includes_sign_hours_and_minutes() {
+		use time::macros::offset;
+
+		assert_eq!(format_offset(UtcOffset::UTC), "UTC+00:00");
+		assert_eq!(format_offset(offset!(+5:30)), "UTC+05:30");
+		assert_eq!(format_offset(offset!(-8:00)), "UTC-08:00");
+		assert_eq!(format_offset(offset!(-3:30)), "UTC-03:30");
+	}
+
+	#[test]
 	fn load_page_reads_custom_content_file() {
 		let temp = tempfile::tempdir().unwrap();
 		let dir = temp.path().join("valid-slug");
@@ -267,6 +299,32 @@ mod tests {
 		assert_eq!(page.date_str, "2024-01-02");
 		assert_eq!(page.content_rel.as_path(), std::path::Path::new("post.md"));
 		assert_eq!(page.content_path, dir.join("post.md"));
+	}
+
+	#[test]
+	fn load_pages_skips_static_and_templates() {
+		let temp = tempfile::tempdir().unwrap();
+		let root = temp.path();
+
+		fs::create_dir(root.join("static")).unwrap();
+		fs::write(root.join("static/page.md"), "# Static\n").unwrap();
+		fs::create_dir(root.join("templates")).unwrap();
+		fs::write(root.join("templates/index.html"), "template").unwrap();
+
+		let page_dir = root.join("post");
+		fs::create_dir(&page_dir).unwrap();
+		fs::write(
+			page_dir.join(PAGE_META),
+			"title = \"Post\"\ndate = \"2024-01-01\"\n",
+		)
+		.unwrap();
+		fs::write(page_dir.join(DEFAULT_CONTENT), "# Post\n").unwrap();
+
+		let output = root.join("build");
+		let pages = load_pages(root, &output).unwrap();
+
+		assert_eq!(pages.len(), 1);
+		assert_eq!(pages[0].slug, "post");
 	}
 
 	#[test]

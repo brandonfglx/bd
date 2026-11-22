@@ -5,11 +5,20 @@ use std::path::Path;
 
 use predicates::prelude::*;
 use tempfile::TempDir;
+use time::OffsetDateTime;
+use time::macros::format_description;
 
-use common::{assert_contains, bd_in, init_blog, read, write};
+use common::{assert_contains, assert_date, bd_in, init_blog, read, write};
 
 fn add_ok(blog: &Path, args: &[&str]) {
 	bd_in(blog).arg("add").args(args).assert().success();
+}
+
+fn local_date() -> String {
+	let now = OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc());
+	now.date()
+		.format(format_description!("[year]-[month]-[day]"))
+		.unwrap()
 }
 
 #[test]
@@ -79,6 +88,45 @@ fn add_supports_custom_slug_date_and_draft() {
 		meta.get("draft").and_then(|value| value.as_bool()),
 		Some(true)
 	);
+}
+
+#[test]
+fn add_uses_local_date_and_reports_timezone() {
+	let temp = TempDir::new().unwrap();
+	let blog = temp.path().join("blog");
+	init_blog(&blog);
+
+	let before = local_date();
+	bd_in(&blog)
+		.args(["add", "Local Time"])
+		.assert()
+		.success()
+		.stdout(predicate::str::contains("UTC"));
+	let after = local_date();
+
+	let meta: toml::Value =
+		toml::from_str(&read(blog.join("local-time/page.toml"))).expect("valid page.toml");
+	let date = meta["date"].as_str().expect("date should be a string");
+
+	assert_date(date);
+	assert!(
+		date == before.as_str() || date == after.as_str(),
+		"date {date} should be the local date ({before} or {after})"
+	);
+}
+
+#[test]
+fn add_reports_explicit_date_without_timezone() {
+	let temp = TempDir::new().unwrap();
+	let blog = temp.path().join("blog");
+	init_blog(&blog);
+
+	bd_in(&blog)
+		.args(["add", "Explicit Date", "--date", "2000-04-01"])
+		.assert()
+		.success()
+		.stdout(predicate::str::contains("date 2000-04-01"))
+		.stdout(predicate::str::contains("UTC").not());
 }
 
 #[test]

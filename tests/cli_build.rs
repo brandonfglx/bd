@@ -491,3 +491,164 @@ fn build_preserves_old_output_on_render_error() {
 	assert_eq!(read(blog.join("build/index.html")), old_index);
 	assert!(blog.join("build/stable/index.html").is_file());
 }
+
+#[test]
+fn build_copies_static_files() {
+	let temp = TempDir::new().unwrap();
+	let blog = temp.path().join("blog");
+	init_blog(&blog);
+
+	write(blog.join("static/style.css"), "body { color: red; }\n");
+	write(blog.join("static/robots.txt"), "User-agent: *\n");
+	write(blog.join("static/CNAME"), "example.com\n");
+	write(blog.join("static/nested/note.txt"), "hello");
+	write(blog.join("static/.gitkeep"), "");
+	write(blog.join("static/.DS_Store"), "ignored");
+
+	build_ok(&blog, &[]);
+
+	assert_eq!(read(blog.join("build/style.css")), "body { color: red; }\n");
+	assert_eq!(read(blog.join("build/robots.txt")), "User-agent: *\n");
+	assert_eq!(read(blog.join("build/CNAME")), "example.com\n");
+	assert_eq!(read(blog.join("build/nested/note.txt")), "hello");
+	assert!(!blog.join("build/.gitkeep").exists());
+	assert!(!blog.join("build/.DS_Store").exists());
+}
+
+#[test]
+fn build_static_rejects_index_conflict() {
+	let temp = TempDir::new().unwrap();
+	let blog = temp.path().join("blog");
+	init_blog(&blog);
+
+	write(blog.join("static/index.html"), "custom");
+
+	bd_in(&blog)
+		.arg("build")
+		.assert()
+		.failure()
+		.stderr(predicate::str::contains("conflicts with a generated file"));
+}
+
+#[test]
+fn build_static_rejects_page_conflict() {
+	let temp = TempDir::new().unwrap();
+	let blog = temp.path().join("blog");
+	init_blog(&blog);
+	add_ok(&blog, "Static Conflict", "static-conflict", "2024-01-01");
+
+	write(blog.join("static/static-conflict/file.txt"), "x");
+
+	bd_in(&blog)
+		.arg("build")
+		.assert()
+		.failure()
+		.stderr(predicate::str::contains("conflicts with page directory"));
+}
+
+#[test]
+fn build_ignores_page_md_in_static() {
+	let temp = TempDir::new().unwrap();
+	let blog = temp.path().join("blog");
+	init_blog(&blog);
+
+	write(blog.join("static/page.md"), "# Static\n");
+
+	build_ok(&blog, &[]);
+
+	assert_eq!(read(blog.join("build/page.md")), "# Static\n");
+}
+
+#[test]
+fn build_uses_custom_templates() {
+	let temp = TempDir::new().unwrap();
+	let blog = temp.path().join("blog");
+	init_blog(&blog);
+
+	write(blog.join("templates/index.html"), "CUSTOM INDEX");
+	write(
+		blog.join("templates/post.html"),
+		"CUSTOM POST: {{ post.title }}",
+	);
+
+	build_ok(&blog, &[]);
+
+	assert_eq!(read(blog.join("build/index.html")), "CUSTOM INDEX");
+	assert_eq!(
+		read(blog.join("build/my-page/index.html")),
+		"CUSTOM POST: My First Page"
+	);
+}
+
+#[test]
+fn build_uses_custom_partial() {
+	let temp = TempDir::new().unwrap();
+	let blog = temp.path().join("blog");
+	init_blog(&blog);
+
+	write(blog.join("templates/partial.html"), "PARTIAL");
+	write(
+		blog.join("templates/index.html"),
+		"{% include \"partial.html\" %}",
+	);
+
+	build_ok(&blog, &[]);
+
+	assert_eq!(read(blog.join("build/index.html")), "PARTIAL");
+}
+
+#[test]
+fn build_falls_back_to_embedded_template() {
+	let temp = TempDir::new().unwrap();
+	let blog = temp.path().join("blog");
+	init_blog(&blog);
+
+	fs::remove_file(blog.join("templates/post.html")).unwrap();
+
+	build_ok(&blog, &[]);
+
+	let post = read(blog.join("build/my-page/index.html"));
+	assert_contains(&post, "All posts");
+	assert_contains(&post, "My First Page");
+}
+
+#[test]
+fn build_rejects_invalid_custom_template() {
+	let temp = TempDir::new().unwrap();
+	let blog = temp.path().join("blog");
+	init_blog(&blog);
+
+	write(blog.join("templates/index.html"), "{% if %}");
+
+	bd_in(&blog)
+		.arg("build")
+		.assert()
+		.failure()
+		.stderr(predicate::str::contains("failed to parse template"));
+}
+
+#[test]
+fn build_rejects_output_inside_static() {
+	let temp = TempDir::new().unwrap();
+	let blog = temp.path().join("blog");
+	init_blog(&blog);
+
+	bd_in(&blog)
+		.args(["build", "--output", "static/site"])
+		.assert()
+		.failure()
+		.stderr(predicate::str::contains("inside the static directory"));
+}
+
+#[test]
+fn build_rejects_output_inside_templates() {
+	let temp = TempDir::new().unwrap();
+	let blog = temp.path().join("blog");
+	init_blog(&blog);
+
+	bd_in(&blog)
+		.args(["build", "--output", "templates/site"])
+		.assert()
+		.failure()
+		.stderr(predicate::str::contains("inside the templates directory"));
+}
