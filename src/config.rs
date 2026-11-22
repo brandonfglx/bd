@@ -78,3 +78,76 @@ impl BlogConfig {
 		)
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use std::path::{Path, PathBuf};
+
+	use super::*;
+
+	fn write_config(dir: &Path, contents: &str) {
+		std::fs::write(dir.join(BLOG_CONFIG), contents).unwrap();
+	}
+
+	#[test]
+	fn load_applies_defaults() {
+		let temp = tempfile::tempdir().unwrap();
+		write_config(temp.path(), "title = \"Blog\"\n");
+
+		let config = BlogConfig::load(temp.path()).unwrap();
+		assert_eq!(config.title, "Blog");
+		assert_eq!(config.description, "");
+		assert_eq!(config.author, "");
+		assert_eq!(config.language, "en");
+		assert_eq!(config.build.output, PathBuf::from("build"));
+		assert!(!config.build.include_drafts);
+	}
+
+	#[test]
+	fn load_reads_build_settings() {
+		let temp = tempfile::tempdir().unwrap();
+		write_config(
+			temp.path(),
+			"title = \"Blog\"\n\n[build]\noutput = \"site\"\ninclude_drafts = true\n",
+		);
+
+		let config = BlogConfig::load(temp.path()).unwrap();
+		assert_eq!(config.build.output, PathBuf::from("site"));
+		assert!(config.build.include_drafts);
+	}
+
+	#[test]
+	fn load_rejects_unknown_fields() {
+		let temp = tempfile::tempdir().unwrap();
+		write_config(temp.path(), "title = \"Blog\"\nunknown = true\n");
+		assert!(BlogConfig::load(temp.path()).is_err());
+	}
+
+	#[test]
+	fn load_rejects_empty_title_and_language() {
+		let temp = tempfile::tempdir().unwrap();
+
+		write_config(temp.path(), "title = \"   \"\n");
+		assert!(BlogConfig::load(temp.path()).is_err());
+
+		write_config(temp.path(), "title = \"Blog\"\nlanguage = \"\"\n");
+		assert!(BlogConfig::load(temp.path()).is_err());
+	}
+
+	#[test]
+	fn find_root_walks_up_from_nested_directory() {
+		let temp = tempfile::tempdir().unwrap();
+		write_config(temp.path(), "title = \"Blog\"\n");
+		let nested = temp.path().join("a/b");
+		std::fs::create_dir_all(&nested).unwrap();
+
+		let root = BlogConfig::find_root(&nested).unwrap();
+		assert_eq!(root, temp.path().canonicalize().unwrap());
+	}
+
+	#[test]
+	fn find_root_errors_without_blog_toml() {
+		let temp = tempfile::tempdir().unwrap();
+		assert!(BlogConfig::find_root(temp.path()).is_err());
+	}
+}

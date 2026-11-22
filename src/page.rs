@@ -125,8 +125,8 @@ pub fn load_page(dir: &Path) -> Result<Page> {
 		);
 	}
 
-	if content_path == Path::new("page.toml") {
-		bail!("load_page: content_path cannot be page.toml");
+	if rel == Path::new(PAGE_META) {
+		bail!("load_page: content file cannot be {PAGE_META}");
 	}
 
 	let dir_canonical = dir
@@ -222,4 +222,90 @@ pub fn load_pages(root: &Path, output: &Path) -> Result<Vec<Page>> {
 	});
 
 	Ok(pages)
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn parse_and_format_date_round_trip() {
+		let date = parse_date("2024-02-29").expect("leap day should parse");
+		assert_eq!(format_date(date).unwrap(), "2024-02-29");
+	}
+
+	#[test]
+	fn parse_date_rejects_invalid_values() {
+		for value in [
+			"",
+			"2024-1-2",
+			"2024-13-01",
+			"2024-02-30",
+			"2023-02-29",
+			"not-a-date",
+			"2024-01-02T00:00:00",
+		] {
+			assert!(parse_date(value).is_err(), "{value:?} should be invalid");
+		}
+	}
+
+	#[test]
+	fn load_page_reads_custom_content_file() {
+		let temp = tempfile::tempdir().unwrap();
+		let dir = temp.path().join("valid-slug");
+		std::fs::create_dir(&dir).unwrap();
+		std::fs::write(
+			dir.join(PAGE_META),
+			"title = \"Title\"\ndate = \"2024-01-02\"\ncontent = \"post.md\"\n",
+		)
+		.unwrap();
+		std::fs::write(dir.join("post.md"), "# Body\n").unwrap();
+
+		let page = load_page(&dir).unwrap();
+		assert_eq!(page.slug, "valid-slug");
+		assert_eq!(page.title, "Title");
+		assert_eq!(page.date_str, "2024-01-02");
+		assert_eq!(page.content_rel.as_path(), std::path::Path::new("post.md"));
+		assert_eq!(page.content_path, dir.join("post.md"));
+	}
+
+	#[test]
+	fn load_page_rejects_content_outside_page_dir() {
+		let temp = tempfile::tempdir().unwrap();
+		let dir = temp.path().join("valid-slug");
+		std::fs::create_dir(&dir).unwrap();
+		std::fs::write(temp.path().join("outside.md"), "outside").unwrap();
+		std::fs::write(
+			dir.join(PAGE_META),
+			"title = \"Title\"\ndate = \"2024-01-02\"\ncontent = \"../outside.md\"\n",
+		)
+		.unwrap();
+
+		let error = match load_page(&dir) {
+			Ok(_) => panic!("expected an error"),
+			Err(error) => error.to_string(),
+		};
+		assert!(
+			error.contains("relative path without '.' or '..'"),
+			"{error}"
+		);
+	}
+
+	#[test]
+	fn load_page_rejects_missing_content_file() {
+		let temp = tempfile::tempdir().unwrap();
+		let dir = temp.path().join("valid-slug");
+		std::fs::create_dir(&dir).unwrap();
+		std::fs::write(
+			dir.join(PAGE_META),
+			"title = \"Title\"\ndate = \"2024-01-02\"\n",
+		)
+		.unwrap();
+
+		let error = match load_page(&dir) {
+			Ok(_) => panic!("expected an error"),
+			Err(error) => error.to_string(),
+		};
+		assert!(error.contains("content file not found"), "{error}");
+	}
 }

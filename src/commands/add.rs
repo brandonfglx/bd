@@ -32,10 +32,6 @@ pub fn run(title: &str, slug_arg: Option<&str>, date_arg: Option<&str>, draft: b
 		None => slug::slugify(title),
 	};
 
-	if slug.is_empty() {
-		bail!("slug is empty");
-	}
-
 	slug::validate(&slug)?;
 
 	let dir = root.join(&slug);
@@ -76,4 +72,24 @@ pub fn run(title: &str, slug_arg: Option<&str>, date_arg: Option<&str>, draft: b
 
 	println!("Created page \"{slug}\" at {}", dir.display());
 	Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn embedded_page_markdown_is_not_empty() {
+		assert!(
+			!PAGE_MD.trim().is_empty(),
+			"src/base/page.md must contain the starter Markdown"
+		);
+	}
+
+	#[test]
+	fn default_page_markdown_falls_back_when_embedded_file_is_empty() {
+		let markdown = default_page_markdown();
+		assert!(!markdown.trim().is_empty());
+		assert!(markdown.ends_with('\n'), "{markdown:?}");
+	}
 }

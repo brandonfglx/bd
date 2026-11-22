@@ -91,7 +91,7 @@ pub fn run(location: &Path) -> Result<()> {
 		content: "page.md".to_string(),
 	};
 	let page_toml = toml::to_string_pretty(&page)
-		.context(format!("init: failed to seralize {DEFAULT_PAGE}/page.toml"))?;
+		.context(format!("init: failed to serialize {DEFAULT_PAGE}/page.toml"))?;
 	fs::write(page_dir.join(PAGE_META), page_toml).with_context(|| {
 		format!(
 			"init: failed to write {}",
@@ -109,11 +109,11 @@ pub fn run(location: &Path) -> Result<()> {
 		git_init(&location)?;
 	}
 
-	println!("Initiated bd blog in {}", location.display());
+	println!("Initialized bd blog in {}", location.display());
 	println!();
 	println!("Next steps:");
 	println!("    cd {}", location.display());
-	println!("    [text editor] blog.toml");
+	println!("    $EDITOR blog.toml");
 	println!("    bd add \"My first post\"");
 	println!("    bd build");
 	println!("    git add . && git commit -m \"First post\"");
@@ -186,4 +186,82 @@ fn write_gitignore(path: &Path) -> Result<()> {
 	}
 
 	fs::write(path, contents).with_context(|| format!("failed to write {}", path.display()))
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn embedded_workflow_is_not_empty_and_has_placeholders() {
+		assert!(
+			!PAGES_WORKFLOW.trim().is_empty(),
+			"src/base/pages.yml must contain the GitHub Pages workflow"
+		);
+		assert!(PAGES_WORKFLOW.contains("__BD_VERSION__"));
+		assert!(PAGES_WORKFLOW.contains("__BD_REPO__"));
+	}
+
+	#[test]
+	fn run_refuses_existing_blog() {
+		let temp = tempfile::tempdir().unwrap();
+		fs::write(temp.path().join(BLOG_CONFIG), "title = \"Existing\"\n").unwrap();
+
+		let error = run(temp.path()).unwrap_err().to_string();
+
+		assert!(error.contains("already contains blog.toml"), "{error}");
+	}
+
+	#[test]
+	fn write_gitignore_creates_file() {
+		let temp = tempfile::tempdir().unwrap();
+		let path = temp.path().join(".gitignore");
+
+		write_gitignore(&path).unwrap();
+
+		let contents = fs::read_to_string(&path).unwrap();
+		assert!(contents.contains("/build"));
+		assert!(contents.ends_with('\n'));
+	}
+
+	#[test]
+	fn write_gitignore_preserves_existing_entries_and_deduplicates() {
+		let temp = tempfile::tempdir().unwrap();
+		let path = temp.path().join(".gitignore");
+		// No trailing newline on purpose.
+		fs::write(&path, "target\n.DS_Store").unwrap();
+
+		write_gitignore(&path).unwrap();
+		write_gitignore(&path).unwrap();
+
+		let contents = fs::read_to_string(&path).unwrap();
+		assert!(contents.starts_with("target\n.DS_Store\n"), "{contents}");
+		assert_eq!(contents.matches(".DS_Store").count(), 1);
+		assert_eq!(contents.matches("/build").count(), 1);
+
+		for line in GITIGNORE
+			.lines()
+			.map(str::trim)
+			.filter(|line| !line.is_empty())
+		{
+			let count = contents
+				.lines()
+				.filter(|existing| existing.trim() == line)
+				.count();
+			assert_eq!(count, 1, "{line:?} should appear exactly once:\n{contents}");
+		}
+	}
+
+	#[test]
+	fn write_gitignore_is_idempotent() {
+		let temp = tempfile::tempdir().unwrap();
+		let path = temp.path().join(".gitignore");
+
+		write_gitignore(&path).unwrap();
+		let first = fs::read_to_string(&path).unwrap();
+
+		write_gitignore(&path).unwrap();
+
+		assert_eq!(fs::read_to_string(&path).unwrap(), first);
+	}
 }
