@@ -7,7 +7,10 @@ use anyhow::{Context, Result, bail};
 const GIT_HELP: &str = "git may not be installed; see https://github.com/brandonfglx/bd/blob/main/README.md#troubleshooting";
 
 fn display_args<S: AsRef<OsStr>>(args: &[S]) -> String {
-	args.iter().map(|arg| arg.as_ref().to_string_lossy()).collect::<Vec<_>>().join(" ")
+	args.iter()
+		.map(|arg| arg.as_ref().to_string_lossy())
+		.collect::<Vec<_>>()
+		.join(" ")
 }
 
 fn ensure_success(output: Output, description: &str) -> Result<Output> {
@@ -24,7 +27,11 @@ fn ensure_success(output: Output, description: &str) -> Result<Output> {
 }
 
 pub fn run_os(root: &Path, args: &[OsString]) -> Result<Output> {
-	Command::new("git").args(args).current_dir(root).output().with_context(|| format!("failed to run `git {}`; {GIT_HELP}", display_args(args)))
+	Command::new("git")
+		.args(args)
+		.current_dir(root)
+		.output()
+		.with_context(|| format!("failed to run `git {}`; {GIT_HELP}", display_args(args)))
 }
 
 pub fn run(root: &Path, args: &[&str]) -> Result<Output> {
@@ -43,7 +50,10 @@ pub fn run_os_checked(root: &Path, args: &[OsString]) -> Result<Output> {
 }
 
 pub fn check() -> Result<()> {
-	let output = Command::new("git").arg("--version").output().context(format!("failed to run `git --version`; {GIT_HELP}"))?;
+	let output = Command::new("git")
+		.arg("--version")
+		.output()
+		.context(format!("failed to run `git --version`; {GIT_HELP}"))?;
 	ensure_success(output, "git --version")?;
 	Ok(())
 }
@@ -56,7 +66,10 @@ pub fn init(root: &Path) -> Result<()> {
 pub fn require_repo(root: &Path) -> Result<()> {
 	let output = run(root, &["rev-parse", "--is-inside-work-tree"])?;
 	if !output.status.success() {
-		bail!("{} is not a git repository; run `git init -b main` first", root.display());
+		bail!(
+			"{} is not a git repository; run `git init -b main` first",
+			root.display()
+		);
 	}
 
 	Ok(())
@@ -64,7 +77,12 @@ pub fn require_repo(root: &Path) -> Result<()> {
 
 pub fn remotes(root: &Path) -> Result<Vec<String>> {
 	let output = run_checked(root, &["remote"])?;
-	Ok(String::from_utf8_lossy(&output.stdout).lines().map(str::trim).filter(|line| !line.is_empty()).map(str::to_string).collect())
+	Ok(String::from_utf8_lossy(&output.stdout)
+		.lines()
+		.map(str::trim)
+		.filter(|line| !line.is_empty())
+		.map(str::to_string)
+		.collect())
 }
 
 pub fn add_remote(root: &Path, name: &str, url: &str) -> Result<()> {
@@ -91,7 +109,7 @@ pub fn add(root: &Path, pathspecs: &[String]) -> Result<()> {
 	let mut args = vec![
 		OsString::from("add"),
 		OsString::from("-A"),
-		OsString::from("--")
+		OsString::from("--"),
 	];
 	args.extend(pathspecs.iter().map(|spec| OsString::from(spec.as_str())));
 	run_os_checked(root, &args)?;
@@ -149,7 +167,12 @@ pub fn commit(root: &Path, message: &str, pathspecs: &[String]) -> Result<()> {
 pub fn has_upstream(root: &Path) -> Result<bool> {
 	let output = run(
 		root,
-		&["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"],
+		&[
+			"rev-parse",
+			"--abbrev-ref",
+			"--symbolic-full-name",
+			"@{upstream}",
+		],
 	)?;
 	Ok(output.status.success())
 }

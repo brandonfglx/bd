@@ -1,12 +1,12 @@
 mod cli;
 mod commands;
 mod config;
+mod git;
 mod markdown;
 mod page;
 mod render;
-mod slug;
-mod git;
 mod server;
+mod slug;
 
 use std::process::ExitCode;
 

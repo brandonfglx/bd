@@ -12,7 +12,8 @@ use crate::slug;
 pub const PAGE_META: &str = "page.toml";
 pub const DEFAULT_CONTENT: &str = "page.md";
 const DATE_FORMAT: &[FormatItem<'static>] = format_description!("[year]-[month]-[day]");
-const DATE_DISPLAY_FORMAT: &[FormatItem<'static>] = format_description!("[month repr:long] [day padding:none], [year]");
+const DATE_DISPLAY_FORMAT: &[FormatItem<'static>] =
+	format_description!("[month repr:long] [day padding:none], [year]");
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -87,7 +88,8 @@ pub fn format_date(date: Date) -> Result<String> {
 }
 
 pub fn format_date_display(date: Date) -> Result<String> {
-	date.format(DATE_DISPLAY_FORMAT).context("format_date_display: cannot format date for display")
+	date.format(DATE_DISPLAY_FORMAT)
+		.context("format_date_display: cannot format date for display")
 }
 
 // Extract a page from the given directory (page.md with metadata in page.toml)
@@ -267,8 +269,14 @@ mod tests {
 
 	#[test]
 	fn format_date_display_uses_long_month_and_unpadded_day() {
-		assert_eq!(format_date_display(parse_date("2024-01-01").unwrap()).unwrap(), "January 1, 2024");
-		assert_eq!(format_date_display(parse_date("2024-12-31").unwrap()).unwrap(), "December 31, 2024");
+		assert_eq!(
+			format_date_display(parse_date("2024-01-01").unwrap()).unwrap(),
+			"January 1, 2024"
+		);
+		assert_eq!(
+			format_date_display(parse_date("2024-12-31").unwrap()).unwrap(),
+			"December 31, 2024"
+		);
 	}
 
 	#[test]

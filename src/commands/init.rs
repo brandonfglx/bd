@@ -5,9 +5,9 @@ use anyhow::{Context, Result, bail};
 
 use crate::commands::add::default_page_markdown;
 use crate::config::{BLOG_CONFIG, BlogConfig, BuildConfig};
+use crate::git;
 use crate::page::{PAGE_META, PageFile, format_date, today};
 use crate::render::{BASE_TEMPLATE, INDEX_TEMPLATE, POST_TEMPLATE};
-use crate::git;
 
 const GITIGNORE: &str = include_str!("../base/.gitignore");
 const PAGES_WORKFLOW: &str = include_str!("../base/pages.yml");
@@ -177,7 +177,9 @@ pub fn run(location: &Path) -> Result<()> {
 	println!(
 		"    2. Edit the blog.toml with your own information and edit page.md inside each directory"
 	);
-	println!("    3. Run `bd build` and then `bd preview` to check the site locally using localhost.");
+	println!(
+		"    3. Run `bd build` and then `bd preview` to check the site locally using localhost."
+	);
 	println!(
 		"    3. When done, execute `bd publish` (which may prompt to add a remote HTTP or SSH) - make sure Repo Settings -> Pages -> Source: GitHub Actions."
 	);

@@ -1,6 +1,6 @@
 pub mod add;
 pub mod build;
 pub mod init;
-pub mod rm;
-pub mod publish;
 pub mod preview;
+pub mod publish;
+pub mod rm;

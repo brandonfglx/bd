@@ -50,10 +50,7 @@ fn bare_remote(temp: &TempDir) -> PathBuf {
 }
 
 fn add_remote(blog: &Path, remote: &Path) {
-	git(
-		blog,
-		&["remote", "add", "origin", remote.to_str().unwrap()],
-	);
+	git(blog, &["remote", "add", "origin", remote.to_str().unwrap()]);
 }
 
 fn bd_publish(blog: &Path, args: &[&str]) -> assert_cmd::Command {
@@ -145,10 +142,7 @@ fn publish_page_requires_a_value() {
 	let blog = temp.path().join("blog");
 	init_blog(&blog);
 
-	bd_in(&blog)
-		.args(["publish", "--page"])
-		.assert()
-		.failure();
+	bd_in(&blog).args(["publish", "--page"]).assert().failure();
 }
 
 #[test]

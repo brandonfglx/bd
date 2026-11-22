@@ -9,27 +9,34 @@ use tiny_http::{Header, Method, Request, Response, Server, StatusCode};
 pub struct PreviewServer {
 	server: Server,
 	root: PathBuf,
-	addr: SocketAddr
+	addr: SocketAddr,
 }
 
 enum Resolved {
 	File(PathBuf),
 	Redirect(String),
-	NotFound
+	NotFound,
 }
 
 impl PreviewServer {
 	pub fn bind(root: PathBuf, host: &str, port: u16) -> Result<Self> {
-		let root = root.canonicalize().with_context(|| format!("failed to resolve {}", root.display()))?;
+		let root = root
+			.canonicalize()
+			.with_context(|| format!("failed to resolve {}", root.display()))?;
 		if !root.is_dir() {
 			bail!("preview root is not a director: {}", root.display());
 		}
 
 		let address = format!("{host}:{port}");
-		let server = Server::http(&address).map_err(|error| anyhow::anyhow!("failed to start preview server on {address}: {error}"))?;
-		let addr = server.server_addr().to_ip().context("preview server did not bind to a TCP address")?;
+		let server = Server::http(&address).map_err(|error| {
+			anyhow::anyhow!("failed to start preview server on {address}: {error}")
+		})?;
+		let addr = server
+			.server_addr()
+			.to_ip()
+			.context("preview server did not bind to a TCP address")?;
 
-		Ok(Self {server, root, addr})
+		Ok(Self { server, root, addr })
 	}
 
 	pub fn addr(&self) -> SocketAddr {
@@ -49,8 +56,12 @@ impl PreviewServer {
 
 fn handle(root: &Path, request: Request) -> Result<()> {
 	if request.method() != &Method::Get && request.method() != &Method::Head {
-		let response = Response::empty(StatusCode(405)).with_header(header("Allow", "GET, HEAD")).with_header(header("Cache-Control", "no-store"));
-		request.respond(response).context("failed to send 405 response")?;
+		let response = Response::empty(StatusCode(405))
+			.with_header(header("Allow", "GET, HEAD"))
+			.with_header(header("Cache-Control", "no-store"));
+		request
+			.respond(response)
+			.context("failed to send 405 response")?;
 		return Ok(());
 	}
 
@@ -59,7 +70,9 @@ fn handle(root: &Path, request: Request) -> Result<()> {
 		Ok(resolved) => resolved,
 		Err(error) => {
 			let response = text_response(StatusCode(400), &format!("400 Bad Request\n\n{error}\n"));
-			request.respond(response).context("failed to send 400 response")?;
+			request
+				.respond(response)
+				.context("failed to send 400 response")?;
 			return Ok(());
 		}
 	};
@@ -67,13 +80,19 @@ fn handle(root: &Path, request: Request) -> Result<()> {
 	match resolved {
 		Resolved::File(path) => serve_file(request, &path),
 		Resolved::Redirect(location) => {
-			let response = Response::empty(StatusCode(301)).with_header(header("Location", &location)).with_header(header("Cache-Control", "no-store"));
-			request.respond(response).context("failed to send redirect")?;
+			let response = Response::empty(StatusCode(301))
+				.with_header(header("Location", &location))
+				.with_header(header("Cache-Control", "no-store"));
+			request
+				.respond(response)
+				.context("failed to send redirect")?;
 			Ok(())
 		}
 		Resolved::NotFound => {
 			let response = text_response(StatusCode(404), "404 Not Found\n");
-			request.respond(response).context("failed to send 404 response")?;
+			request
+				.respond(response)
+				.context("failed to send 404 response")?;
 			Ok(())
 		}
 	}
