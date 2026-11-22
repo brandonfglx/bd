@@ -12,6 +12,7 @@ use crate::slug;
 pub const PAGE_META: &str = "page.toml";
 pub const DEFAULT_CONTENT: &str = "page.md";
 const DATE_FORMAT: &[FormatItem<'static>] = format_description!("[year]-[month]-[day]");
+const DATE_DISPLAY_FORMAT: &[FormatItem<'static>] = format_description!("[month repr:long] [day padding:none], [year]");
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -32,6 +33,7 @@ pub struct Page {
 	pub description: String,
 	pub date: Date,
 	pub date_str: String,
+	pub date_display: String,
 	pub draft: bool,
 	pub dir: PathBuf,
 	pub content_rel: PathBuf,
@@ -84,6 +86,10 @@ pub fn format_date(date: Date) -> Result<String> {
 		.context("format_date: cannot format date into YYYY-MM-DD")
 }
 
+pub fn format_date_display(date: Date) -> Result<String> {
+	date.format(DATE_DISPLAY_FORMAT).context("format_date_display: cannot format date for display")
+}
+
 // Extract a page from the given directory (page.md with metadata in page.toml)
 pub fn load_page(dir: &Path) -> Result<Page> {
 	let meta_path = dir.join(PAGE_META);
@@ -114,6 +120,7 @@ pub fn load_page(dir: &Path) -> Result<Page> {
 
 	let date = parse_date(&file.date).with_context(|| format!("in {}", meta_path.display()))?;
 	let date_str = format_date(date)?;
+	let date_display = format_date_display(date)?;
 
 	let rel = Path::new(&file.content);
 	if rel.as_os_str().is_empty() {
@@ -167,6 +174,7 @@ pub fn load_page(dir: &Path) -> Result<Page> {
 		description: file.description,
 		date,
 		date_str,
+		date_display,
 		draft: file.draft,
 		dir: dir.to_path_buf(),
 		content_rel: rel.to_path_buf(),
@@ -254,6 +262,13 @@ mod tests {
 	fn parse_and_format_date_round_trip() {
 		let date = parse_date("2024-02-29").expect("leap day should parse");
 		assert_eq!(format_date(date).unwrap(), "2024-02-29");
+		assert_eq!(format_date_display(date).unwrap(), "February 29, 2024");
+	}
+
+	#[test]
+	fn format_date_display_uses_long_month_and_unpadded_day() {
+		assert_eq!(format_date_display(parse_date("2024-01-01").unwrap()).unwrap(), "January 1, 2024");
+		assert_eq!(format_date_display(parse_date("2024-12-31").unwrap()).unwrap(), "December 31, 2024");
 	}
 
 	#[test]
@@ -297,6 +312,7 @@ mod tests {
 		assert_eq!(page.slug, "valid-slug");
 		assert_eq!(page.title, "Title");
 		assert_eq!(page.date_str, "2024-01-02");
+		assert_eq!(page.date_display, "January 2, 2024");
 		assert_eq!(page.content_rel.as_path(), std::path::Path::new("post.md"));
 		assert_eq!(page.content_path, dir.join("post.md"));
 	}

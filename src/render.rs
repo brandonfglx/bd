@@ -25,6 +25,7 @@ pub struct PostView<'a> {
 	pub title: &'a str,
 	pub description: &'a str,
 	pub date: &'a str,
+	pub date_display: &'a str,
 	pub draft: bool,
 }
 
@@ -35,6 +36,7 @@ impl<'a> From<&'a Page> for PostView<'a> {
 			title: &page.title,
 			description: &page.description,
 			date: &page.date_str,
+			date_display: &page.date_display,
 			draft: page.draft,
 		}
 	}
@@ -172,6 +174,7 @@ mod tests {
 				title: "Newer",
 				description: "Fresh",
 				date: "2024-02-01",
+				date_display: "February 1, 2024",
 				draft: false,
 			},
 			PostView {
@@ -179,6 +182,7 @@ mod tests {
 				title: "Older",
 				description: "",
 				date: "2024-01-01",
+				date_display: "January 1, 2024",
 				draft: false,
 			},
 		];
@@ -193,7 +197,7 @@ mod tests {
 		assert!(html.contains("<link rel=\"stylesheet\" href=\"./style.css\">"));
 		assert!(html.contains("<a href=\"newer/\">Newer</a>"));
 		assert!(html.contains("<a href=\"older/\">Older</a>"));
-		assert!(html.contains("<time datetime=\"2024-02-01\">2024-02-01</time>"));
+		assert!(html.contains("<time datetime=\"2024-02-01\">February 1, 2024</time>"));
 		assert!(html.contains("Fresh"));
 		assert!(html.contains("&copy;"));
 		assert!(html.contains("Ada"));
@@ -218,6 +222,7 @@ mod tests {
 			title: "<script>alert(1)</script>",
 			description: "\"quoted\" & more",
 			date: "2024-01-01",
+			date_display: "January 1, 2024",
 			draft: false,
 		}];
 
@@ -237,6 +242,7 @@ mod tests {
 			title: "Hello",
 			description: "About hello",
 			date: "2024-03-04",
+			date_display: "March 4, 2024",
 			draft: true,
 		};
 
@@ -260,6 +266,7 @@ mod tests {
 			title: "Hello",
 			description: "",
 			date: "2024-03-04",
+			date_display: "March 4, 2024",
 			draft: false,
 		};
 
@@ -277,6 +284,7 @@ mod tests {
 			title: "Raw",
 			description: "",
 			date: "2024-01-01",
+			date_display: "January 1, 2024",
 			draft: false,
 		};
 
@@ -295,6 +303,7 @@ mod tests {
 			title: "A & B",
 			description: "<tag>",
 			date: "2024-01-01",
+			date_display: "January 1, 2024",
 			draft: false,
 		};
 
@@ -337,6 +346,7 @@ mod tests {
 			title: "Hello",
 			description: "",
 			date: "2024-01-01",
+			date_display: "January 1, 2024",
 			draft: false,
 		};
 		let html = renderer.post(&blog(), &post, "").unwrap();

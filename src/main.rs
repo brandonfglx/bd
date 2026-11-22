@@ -5,6 +5,8 @@ mod markdown;
 mod page;
 mod render;
 mod slug;
+mod git;
+mod server;
 
 use std::process::ExitCode;
 
@@ -40,5 +42,7 @@ fn run() -> anyhow::Result<()> {
 			verbose,
 			force,
 		} => commands::build::run(drafts, output.as_deref(), verbose, force),
+		Command::Publish { page } => commands::publish::run(page.as_deref()),
+		Command::Preview { port } => commands::preview::run(port),
 	}
 }

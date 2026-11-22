@@ -34,4 +34,12 @@ pub enum Command {
 		#[arg(long)]
 		force: bool,
 	},
+	Publish {
+		#[arg(long, value_name = "PAGE")]
+		page: Option<String>,
+	},
+	Preview {
+		#[arg(long, default_value_t = 10203, value_name = "PORT")]
+		port: u16,
+	},
 }
