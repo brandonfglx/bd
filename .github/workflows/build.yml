@@ -36,19 +36,20 @@ jobs:
         with:
           ref: ${{ inputs.release_tag || github.ref }}
       - uses: dtolnay/rust-toolchain@stable
-        targets: ${{ matrix.target }}
+        with:
+          targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
       - name: Build
         run: cargo build --release --locked --target ${{ matrix.target }}
       - name: Package (Unix)
-        if: matrix.archive == "tar.gz"
+        if: matrix.archive == 'tar.gz'
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p dist
           tar -czf "dist/bd-${{ matrix.target }}.tar.gz" -C target/${{ matrix.target }}/release bd
       - name: Package (Windows)
-        if: matrix.archive == "zip"
+        if: matrix.archive == 'zip'
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
