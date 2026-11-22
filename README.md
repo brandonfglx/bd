@@ -10,7 +10,10 @@
 > bd is currently in alpha. Some features may not be complete! Check out the change log [here.](./CHANGELOG.md)
 
 ## Quick Start
-Download the latest release builds [here.](https://github.com/brandonfglx/bd/releases/latest)
+1. Download the latest release builds [here.](https://github.com/brandonfglx/bd/releases/latest)
+2. Extract the binary from the downloaded file
+3. (macOS only) Open the terminal and remove the app quarantine: `xattr -d com.apple.quarantine bd` (Check the FAQ to learn more)
+4. Launch bd using the terminal: `./bd --help` (Unix)
 
 ## Features
  - init: intializes a new bd directory
@@ -20,6 +23,10 @@ Download the latest release builds [here.](https://github.com/brandonfglx/bd/rel
 
 ## Technicals
 
+
+## FAQ
+ - Test
+	- two
 
 ## License
 bd is licensed under the [GNU General Public License Version 3](./LICENSE).

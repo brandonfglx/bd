@@ -8,4 +8,4 @@ What's new:
 Known Issues:
  - No options for changing HTML file
  - Potentially broken `bd` builds using GitHub Actions
- - Code is tested, but functionality is not
+ - Code is tested, but functionality was not
