@@ -3,7 +3,7 @@
 	<picture>
 		<img src="./resources/demo/demo.gif" alt="bd Demo Clip">
 	</picture>
-	<h3>Sometimes you need it blogged.</h3>
+	<h3>A small blogging system hosted on git.</h3>
 </div>
 
 > [!NOTE]
