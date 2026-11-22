@@ -652,3 +652,131 @@ fn build_rejects_output_inside_templates() {
 		.failure()
 		.stderr(predicate::str::contains("inside the templates directory"));
 }
+
+#[test]
+fn build_writes_output_marker() {
+	let temp = TempDir::new().unwrap();
+	let blog = temp.path().join("blog");
+	init_blog(&blog);
+
+	build_ok(&blog, &[]);
+
+	let marker = read(blog.join("build/.bd-output"));
+	assert_contains(&marker, "bd ");
+}
+
+#[test]
+fn build_replaces_marked_output() {
+	let temp = TempDir::new().unwrap();
+	let blog = temp.path().join("blog");
+	init_blog(&blog);
+
+	build_ok(&blog, &[]);
+	write(blog.join("build/stale.txt"), "stale");
+
+	build_ok(&blog, &[]);
+
+	assert!(!blog.join("build/stale.txt").exists());
+	assert!(blog.join("build/index.html").is_file());
+}
+
+#[test]
+fn build_refuses_unmarked_output() {
+	let temp = TempDir::new().unwrap();
+	let blog = temp.path().join("blog");
+	init_blog(&blog);
+
+	write(blog.join("build/keep.txt"), "keep");
+
+	bd_in(&blog)
+		.arg("build")
+		.assert()
+		.failure()
+		.stderr(predicate::str::contains("does not contain .bd-output"))
+		.stderr(predicate::str::contains("--force"));
+
+	assert_eq!(read(blog.join("build/keep.txt")), "keep");
+}
+
+#[test]
+fn build_force_replaces_unmarked_output() {
+	let temp = TempDir::new().unwrap();
+	let blog = temp.path().join("blog");
+	init_blog(&blog);
+
+	write(blog.join("build/keep.txt"), "keep");
+
+	build_ok(&blog, &["--force"]);
+
+	assert!(!blog.join("build/keep.txt").exists());
+	assert!(blog.join("build/.bd-output").is_file());
+}
+
+#[cfg(unix)]
+#[test]
+fn build_rejects_symlink_output() {
+	use std::os::unix::fs::symlink;
+
+	let temp = TempDir::new().unwrap();
+	let blog = temp.path().join("blog");
+	init_blog(&blog);
+	let target = blog.join("target");
+	fs::create_dir(&target).unwrap();
+	symlink(&target, blog.join("build")).unwrap();
+
+	bd_in(&blog)
+		.arg("build")
+		.assert()
+		.failure()
+		.stderr(predicate::str::contains("cannot use symlink"));
+
+	assert!(target.is_dir());
+	assert!(!target.join("index.html").exists());
+}
+
+#[test]
+fn build_static_rejects_marker_conflict() {
+	let temp = TempDir::new().unwrap();
+	let blog = temp.path().join("blog");
+	init_blog(&blog);
+
+	write(blog.join("static/.bd-output"), "custom");
+
+	bd_in(&blog)
+		.arg("build")
+		.assert()
+		.failure()
+		.stderr(predicate::str::contains("conflicts with a generated file"));
+}
+
+#[test]
+fn build_preserves_output_when_staging_fails() {
+	let temp = TempDir::new().unwrap();
+	let blog = temp.path().join("blog");
+	init_blog(&blog);
+
+	build_ok(&blog, &[]);
+	let old_index = read(blog.join("build/index.html"));
+
+	write(blog.join("static/index.html"), "custom");
+
+	bd_in(&blog)
+		.arg("build")
+		.assert()
+		.failure()
+		.stderr(predicate::str::contains("conflicts with a generated file"));
+
+	assert_eq!(read(blog.join("build/index.html")), old_index);
+	assert!(blog.join("build/.bd-output").is_file());
+
+	let leftovers: Vec<_> = fs::read_dir(&blog)
+		.unwrap()
+		.filter_map(|entry| entry.ok())
+		.map(|entry| entry.file_name().to_string_lossy().into_owned())
+		.filter(|name| name.starts_with(".bd-build-") || name.starts_with(".bd-old-"))
+		.collect();
+	assert!(
+		leftovers.is_empty(),
+		"leftover temporary dirs: {leftovers:?}"
+	);
+}

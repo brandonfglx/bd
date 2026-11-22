@@ -31,5 +31,7 @@ pub enum Command {
 		output: Option<std::path::PathBuf>,
 		#[arg(short, long)]
 		verbose: bool,
+		#[arg(long)]
+		force: bool,
 	},
 }

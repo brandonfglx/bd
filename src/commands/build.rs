@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::{Component, Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, bail};
 use walkdir::WalkDir;
@@ -9,7 +10,16 @@ use crate::markdown;
 use crate::page::{Page, load_pages};
 use crate::render::{PostView, Renderer};
 
-pub fn run(include_drafts_flag: bool, output_override: Option<&Path>, verbose: bool) -> Result<()> {
+const OUTPUT_MARKER: &str = ".bd-output";
+const STAGING_PREFIX: &str = ".bd-build-";
+const BACKUP_PREFIX: &str = ".bd-old-";
+
+pub fn run(
+	include_drafts_flag: bool,
+	output_override: Option<&Path>,
+	verbose: bool,
+	force: bool,
+) -> Result<()> {
 	let cwd = std::env::current_dir().context("failed to determine current directory")?;
 	let root = BlogConfig::find_root(&cwd)?;
 	let blog = BlogConfig::load(&root)?;
@@ -21,6 +31,7 @@ pub fn run(include_drafts_flag: bool, output_override: Option<&Path>, verbose: b
 	let include_drafts = include_drafts_flag || blog.build.include_drafts;
 
 	let all_pages = load_pages(&root, &output)?;
+	validate_output(&output, force)?;
 	let total = all_pages.len();
 	let page_slugs: Vec<String> = all_pages.iter().map(|page| page.slug.clone()).collect();
 	let pages: Vec<Page> = all_pages
@@ -48,38 +59,21 @@ pub fn run(include_drafts_flag: bool, output_override: Option<&Path>, verbose: b
 		.index(&blog, &views)
 		.context("failed to render index")?;
 
-	remove_existing_output(&output)?;
-	fs::create_dir_all(&output)
-		.with_context(|| format!("failed to create {}", output.display()))?;
-	fs::write(output.join(".nojekyll"), "")
-		.with_context(|| format!("failed to create {}", output.join(".nojekyll").display()))?;
+	let parent = output
+		.parent()
+		.context("build output has no parent directory")?;
+	fs::create_dir_all(parent).with_context(|| format!("failed to create {}", parent.display()))?;
 
-	copy_static(&root, &output, &page_slugs, verbose)?;
-
-	for (page, html) in &rendered {
-		let page_output = output.join(&page.slug);
-		fs::create_dir_all(&page_output)
-			.with_context(|| format!("failed to create {}", page_output.display()))?;
-		let assets = copy_assets(page, &page_output, verbose)?;
-		fs::write(page_output.join("index.html"), html.as_bytes()).with_context(|| {
-			format!(
-				"failed to write {}",
-				page_output.join("index.html").display()
-			)
-		})?;
-
-		if verbose {
-			println!(
-				"    {} ({} asset{})",
-				page.slug,
-				assets,
-				if assets == 1 { "" } else { "s" }
-			);
-		}
-	}
-
-	fs::write(output.join("index.html"), index.as_bytes())
-		.with_context(|| format!("failed to write {}", output.join("index.html").display()))?;
+	let staging = Staging::create(parent)?;
+	write_build(
+		&root,
+		staging.path(),
+		&rendered,
+		&index,
+		&page_slugs,
+		verbose,
+	)?;
+	staging.commit(&output, force)?;
 
 	println!(
 		"Built {} page{} to {}",
@@ -152,27 +146,215 @@ fn resolve_output(root: &Path, rel: &Path) -> Result<PathBuf> {
 	Ok(output)
 }
 
-fn remove_existing_output(output: &Path) -> Result<()> {
+fn validate_output(output: &Path, force: bool) -> Result<bool> {
 	let metadata = match fs::symlink_metadata(output) {
 		Ok(metadata) => metadata,
-		Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+		Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
 		Err(error) => {
-			Err(error).with_context(|| format!("failed to inspect {}", output.display()))?
+			return Err(error).with_context(|| format!("failed to inspect {}", output.display()));
 		}
 	};
 
 	if metadata.file_type().is_symlink() {
-		bail!(
-			"refusing to use symlink as build output: {}",
-			output.display()
-		);
+		bail!("cannot use symlink as build output: {}", output.display());
 	}
 
 	if !metadata.is_dir() {
 		bail!("build output is not a directory: {}", output.display());
 	}
 
-	fs::remove_dir_all(output).with_context(|| format!("failed to remove {}", output.display()))
+	let marker = output.join(OUTPUT_MARKER);
+	match fs::symlink_metadata(&marker) {
+		Ok(metadata) => {
+			if !metadata.is_file() {
+				bail!(
+					"build output marker {} is not a regular file",
+					marker.display()
+				);
+			}
+			Ok(true)
+		}
+		Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+			if force {
+				Ok(true)
+			} else {
+				bail!(
+					"refusing to replace {} because it does not contain {} (use --force to override)",
+					output.display(),
+					OUTPUT_MARKER
+				);
+			}
+		}
+		Err(error) => Err(error).with_context(|| format!("failed to inspect {}", marker.display())),
+	}
+}
+
+struct Staging {
+	path: PathBuf,
+	committed: bool,
+}
+
+impl Staging {
+	fn create(parent: &Path) -> Result<Self> {
+		for _ in 0..16 {
+			let path = unique_path(parent, STAGING_PREFIX)?;
+			match fs::create_dir(&path) {
+				Ok(()) => {
+					return Ok(Self {
+						path,
+						committed: false,
+					});
+				}
+				Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+				Err(error) => {
+					return Err(error).with_context(|| {
+						format!("failed to create staging directory in {}", parent.display())
+					});
+				}
+			}
+		}
+
+		bail!(
+			"failed to create a unique staging directory in {}",
+			parent.display()
+		);
+	}
+
+	fn path(&self) -> &Path {
+		&self.path
+	}
+
+	fn commit(mut self, output: &Path, force: bool) -> Result<()> {
+		let replace = validate_output(output, force)?;
+		let parent = output
+			.parent()
+			.context("build output has no parent directory")?;
+
+		let backup = if replace {
+			let backup = unique_path(parent, BACKUP_PREFIX)?;
+			fs::rename(output, &backup).with_context(|| {
+				format!(
+					"failed to move previous build output {} to {}",
+					output.display(),
+					backup.display()
+				)
+			})?;
+			Some(backup)
+		} else {
+			None
+		};
+
+		if let Err(error) = fs::rename(&self.path, output) {
+			if let Some(backup) = &backup {
+				match fs::rename(backup, output) {
+					Ok(()) => {
+						return Err(error).with_context(|| {
+							format!(
+								"failed to move new build into {}; previous output was restored",
+								output.display()
+							)
+						});
+					}
+					Err(restore_error) => {
+						return Err(error).with_context(|| {
+							format!(
+								"failed to move new build into {}; previous output is preserved at {} but could not be restored: {restore_error}",
+								output.display(),
+								backup.display()
+							)
+						});
+					}
+				}
+			}
+
+			return Err(error)
+				.with_context(|| format!("failed to move new build into {}", output.display()));
+		}
+
+		self.committed = true;
+
+		if let Some(backup) = backup
+			&& let Err(error) = fs::remove_dir_all(&backup)
+		{
+			eprintln!(
+				"warning: failed to remove previous build output {}: {error}",
+				backup.display()
+			);
+		}
+
+		Ok(())
+	}
+}
+
+impl Drop for Staging {
+	fn drop(&mut self) {
+		if !self.committed {
+			let _ = fs::remove_dir_all(&self.path);
+		}
+	}
+}
+
+fn unique_path(parent: &Path, prefix: &str) -> Result<PathBuf> {
+	let nanos = SystemTime::now()
+		.duration_since(UNIX_EPOCH)
+		.map(|duration| duration.as_nanos())
+		.unwrap_or_default();
+	let pid = std::process::id();
+
+	for attempt in 0..100 {
+		let candidate = parent.join(format!("{prefix}{pid}-{nanos}-{attempt}"));
+		if !candidate.exists() {
+			return Ok(candidate);
+		}
+	}
+
+	bail!(
+		"failed to find an unused temporary name in {}",
+		parent.display()
+	)
+}
+
+fn write_build(
+	root: &Path,
+	output: &Path,
+	rendered: &[(&Page, String)],
+	index: &str,
+	page_slugs: &[String],
+	verbose: bool,
+) -> Result<()> {
+	let marker = output.join(OUTPUT_MARKER);
+	fs::write(&marker, format!("bd {}\n", env!("CARGO_PKG_VERSION")))
+		.with_context(|| format!("failed to create {}", marker.display()))?;
+
+	let nojekyll = output.join(".nojekyll");
+	fs::write(&nojekyll, "").with_context(|| format!("failed to create {}", nojekyll.display()))?;
+
+	copy_static(root, output, page_slugs, verbose)?;
+
+	for (page, html) in rendered {
+		let page_output = output.join(&page.slug);
+		fs::create_dir_all(&page_output)
+			.with_context(|| format!("failed to create {}", page_output.display()))?;
+		let assets = copy_assets(page, &page_output, verbose)?;
+		let index_path = page_output.join("index.html");
+		fs::write(&index_path, html.as_bytes())
+			.with_context(|| format!("failed to write {}", index_path.display()))?;
+
+		if verbose {
+			println!(
+				"    {} ({} asset{})",
+				page.slug,
+				assets,
+				if assets == 1 { "" } else { "s" }
+			);
+		}
+	}
+
+	let index_path = output.join("index.html");
+	fs::write(&index_path, index.as_bytes())
+		.with_context(|| format!("failed to write {}", index_path.display()))?;
+
+	Ok(())
 }
 
 fn copy_static(root: &Path, output: &Path, page_slugs: &[String], verbose: bool) -> Result<usize> {
@@ -256,7 +438,7 @@ fn validate_static_path(rel: &Path, page_slugs: &[String]) -> Result<()> {
 	};
 
 	let first = first.to_string_lossy();
-	if first == "index.html" || first == ".nojekyll" {
+	if first == "index.html" || first == ".nojekyll" || first == OUTPUT_MARKER {
 		bail!(
 			"static path {} conflicts with a generated file",
 			rel.display()
@@ -431,26 +613,49 @@ mod tests {
 	}
 
 	#[test]
-	fn remove_existing_output_handles_missing_file_and_directory() {
+	fn validate_output_handles_missing_file_and_directory() {
 		let temp = tempfile::tempdir().unwrap();
+
 		let missing = temp.path().join("missing");
-		remove_existing_output(&missing).unwrap();
+		assert!(!validate_output(&missing, false).unwrap());
 
 		let file = temp.path().join("file");
 		fs::write(&file, "not a directory").unwrap();
-		let error = remove_existing_output(&file).unwrap_err().to_string();
+		let error = validate_output(&file, false).unwrap_err().to_string();
 		assert!(error.contains("not a directory"), "{error}");
 
 		let dir = temp.path().join("build");
 		fs::create_dir(&dir).unwrap();
-		fs::write(dir.join("index.html"), "old").unwrap();
-		remove_existing_output(&dir).unwrap();
-		assert!(!dir.exists());
+		fs::write(dir.join(OUTPUT_MARKER), "bd\n").unwrap();
+		assert!(validate_output(&dir, false).unwrap());
+	}
+
+	#[test]
+	fn validate_output_requires_marker_unless_forced() {
+		let temp = tempfile::tempdir().unwrap();
+		let dir = temp.path().join("build");
+		fs::create_dir(&dir).unwrap();
+
+		let error = validate_output(&dir, false).unwrap_err().to_string();
+		assert!(error.contains("does not contain .bd-output"), "{error}");
+		assert!(error.contains("--force"), "{error}");
+		assert!(validate_output(&dir, true).unwrap());
+	}
+
+	#[test]
+	fn validate_output_rejects_non_file_marker() {
+		let temp = tempfile::tempdir().unwrap();
+		let dir = temp.path().join("build");
+		fs::create_dir(&dir).unwrap();
+		fs::create_dir(dir.join(OUTPUT_MARKER)).unwrap();
+
+		let error = validate_output(&dir, true).unwrap_err().to_string();
+		assert!(error.contains("is not a regular file"), "{error}");
 	}
 
 	#[cfg(unix)]
 	#[test]
-	fn remove_existing_output_refuses_symlink() {
+	fn validate_output_refuses_symlink() {
 		use std::os::unix::fs::symlink;
 
 		let temp = tempfile::tempdir().unwrap();
@@ -459,10 +664,54 @@ mod tests {
 		let link = temp.path().join("build");
 		symlink(&target, &link).unwrap();
 
-		let error = remove_existing_output(&link).unwrap_err().to_string();
+		let error = validate_output(&link, false).unwrap_err().to_string();
 
-		assert!(error.contains("refusing to use symlink"), "{error}");
+		assert!(error.contains("cannot use symlink"), "{error}");
 		assert!(target.is_dir());
+	}
+
+	#[test]
+	fn staging_drop_removes_uncommitted_directory() {
+		let temp = tempfile::tempdir().unwrap();
+		let staging = Staging::create(temp.path()).unwrap();
+		let path = staging.path().to_path_buf();
+		fs::write(path.join("file"), "x").unwrap();
+
+		drop(staging);
+
+		assert!(!path.exists());
+	}
+
+	#[test]
+	fn staging_commit_replaces_existing_output() {
+		let temp = tempfile::tempdir().unwrap();
+		let output = temp.path().join("build");
+		fs::create_dir(&output).unwrap();
+		fs::write(output.join(OUTPUT_MARKER), "old").unwrap();
+		fs::write(output.join("old.txt"), "old").unwrap();
+
+		let staging = Staging::create(temp.path()).unwrap();
+		fs::write(staging.path().join(OUTPUT_MARKER), "new").unwrap();
+		fs::write(staging.path().join("index.html"), "new").unwrap();
+		staging.commit(&output, false).unwrap();
+
+		assert_eq!(
+			fs::read_to_string(output.join("index.html")).unwrap(),
+			"new"
+		);
+		assert_eq!(
+			fs::read_to_string(output.join(OUTPUT_MARKER)).unwrap(),
+			"new"
+		);
+		assert!(!output.join("old.txt").exists());
+
+		let leftovers: Vec<_> = fs::read_dir(temp.path())
+			.unwrap()
+			.filter_map(|entry| entry.ok())
+			.map(|entry| entry.file_name().to_string_lossy().into_owned())
+			.filter(|name| name.starts_with(BACKUP_PREFIX))
+			.collect();
+		assert!(leftovers.is_empty(), "leftover backups: {leftovers:?}");
 	}
 
 	#[test]
@@ -493,7 +742,7 @@ mod tests {
 
 	#[test]
 	fn copy_static_rejects_generated_file_conflicts() {
-		for rel in ["index.html", ".nojekyll"] {
+		for rel in ["index.html", ".nojekyll", OUTPUT_MARKER] {
 			let temp = tempfile::tempdir().unwrap();
 			let root = temp.path();
 			let static_dir = root.join("static");

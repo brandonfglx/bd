@@ -38,6 +38,7 @@ fn run() -> anyhow::Result<()> {
 			drafts,
 			output,
 			verbose,
-		} => commands::build::run(drafts, output.as_deref(), verbose),
+			force,
+		} => commands::build::run(drafts, output.as_deref(), verbose, force),
 	}
 }
