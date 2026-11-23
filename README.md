@@ -1,7 +1,7 @@
 <div align="center">
 	<h1>bd</h1>
 	<picture>
-		<img src="./resources/demo/demo.gif" alt="bd Demo Clip">
+		<img src="./resources/demo/demo.png" alt="bd Demo Clip">
 	</picture>
 	<h3>A small blogging system hosted on git.</h3>
 </div>

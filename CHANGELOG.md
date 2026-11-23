@@ -1,4 +1,12 @@
+# Release v0.1.0
+A minor update to fix some backend issues and fix up template HTML. Also, bump version to the first beta!
+
+What's new:
+ - Fixes to CI/CD pipeline
+ - Changed template CSS to be more monotone/grayscale
+
 # Release v0.0.3
+What's new:
  - The default template now supports dark mode - changes depending on device preference
  - `bd` can now directly add, commit, and push information to a remote repository using `bd publish [slug]` - update only a slug, if provided; otherwise update all pages
  - The default template has better formatting - page title, date, and description are more aligned and expanded horizontally

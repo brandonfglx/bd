@@ -248,10 +248,10 @@ mod tests {
 
 		let html = renderer.post(&blog(), &post, "<p>Body</p>").unwrap();
 
-		assert!(html.contains("<title>Hello &mdash; My Blog</title>"));
+		assert!(html.contains("<title>Hello - My Blog</title>"));
 		assert!(html.contains("<h1>Hello</h1>"));
 		assert!(html.contains("<meta name=\"description\" content=\"About hello\">"));
-		assert!(html.contains("<strong>draft</strong>"));
+		assert!(html.contains("<strong>Draft</strong>"));
 		assert!(html.contains("<div class=\"content\">"));
 		assert!(html.contains("<p>Body</p>"));
 		assert!(html.contains("<link rel=\"stylesheet\" href=\"../style.css\">"));
@@ -309,7 +309,7 @@ mod tests {
 
 		let html = renderer.post(&blog(), &post, "").unwrap();
 
-		assert!(html.contains("<title>A &amp; B &mdash; My Blog</title>"));
+		assert!(html.contains("<title>A &amp; B - My Blog</title>"));
 		assert!(html.contains("<h1>A &amp; B</h1>"));
 		assert!(html.contains("content=\"&lt;tag&gt;\""));
 		assert!(!html.contains("<tag>"));
