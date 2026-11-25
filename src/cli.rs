@@ -9,6 +9,10 @@ pub struct Cli {
 pub enum Command {
 	Init {
 		location: std::path::PathBuf,
+		#[arg(long, conflicts_with = "upgrade")]
+		force: bool,
+		#[arg(long)]
+		upgrade: bool,
 	},
 	Add {
 		title: String,

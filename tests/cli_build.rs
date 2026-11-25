@@ -39,7 +39,7 @@ fn build_renders_index_and_posts() {
 		.stdout(predicate::str::contains("Built 3 pages"));
 
 	let index = read(blog.join("build/index.html"));
-	assert_contains(&index, "My Blog");
+	assert_contains(&index, "Default Blog");
 	assert_contains(&index, "First Post");
 	assert_contains(&index, "Second Post");
 	assert_contains(&index, "second-post/");

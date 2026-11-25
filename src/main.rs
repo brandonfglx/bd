@@ -29,7 +29,11 @@ fn run() -> anyhow::Result<()> {
 	let cli = Cli::parse();
 
 	match cli.command {
-		Command::Init { location } => commands::init::run(&location),
+		Command::Init {
+			location,
+			force,
+			upgrade,
+		} => commands::init::run(&location, force, upgrade),
 		Command::Add {
 			title,
 			slug,

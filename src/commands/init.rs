@@ -38,37 +38,16 @@ pub(crate) fn default_readme_markdown() -> &'static str {
 	}
 }
 
-pub fn run(location: &Path) -> Result<()> {
+pub fn run(location: &Path, force: bool, upgrade: bool) -> Result<()> {
 	let location = std::path::absolute(location)
 		.with_context(|| format!("init: failed to resolve {}", location.display()))?;
 
-	if location.join(BLOG_CONFIG).exists() {
-		bail!(
-			"init: {} already contains {BLOG_CONFIG}",
-			location.display()
-		);
+	if upgrade {
+		return upgrade_scaffolding(&location);
 	}
 
-	if location.join(DEFAULT_PAGE).exists() {
-		bail!(
-			"init: {} already contains a {DEFAULT_PAGE} page",
-			location.display()
-		);
-	}
-
-	if location.join(".github/workflows/pages.yml").exists() {
-		bail!(
-			"init: {} already contains .github/workflows/pages.yml",
-			location.display()
-		);
-	}
-
-	if location.join("templates").exists() {
-		bail!("init: {} already contains templates", location.display());
-	}
-
-	if location.join("static").exists() {
-		bail!("init: {} already contains static", location.display());
+	if !force {
+		refuse_existing(&location)?;
 	}
 
 	if PAGES_WORKFLOW.trim().is_empty() {
@@ -85,13 +64,48 @@ pub fn run(location: &Path) -> Result<()> {
 	fs::create_dir_all(&location)
 		.with_context(|| format!("init: failed to create {}", location.display()))?;
 
-	let blog = BlogConfig {
-		title: "My Blog".to_string(),
+	let blog = default_blog();
+	write_blog_config(&location, &blog)?;
+	write_gitignore(&location.join(".gitignore"))?;
+	write_workflow(&location)?;
+	write_templates(&location)?;
+	write_static(&location)?;
+	write_readme(&location, &blog, force)?;
+	write_about(&location, force)?;
+	write_default_page(&location)?;
+
+	if needs_git_init {
+		git::init(&location)?;
+	}
+
+	println!("Initialized bd blog in {}", location.display());
+	println!();
+	println!("Next steps:");
+	println!("    1. Use `bd add [name]` to create a new page");
+	println!(
+		"    2. Edit the blog.toml with your own information and edit page.md inside each directory"
+	);
+	println!(
+		"    3. Run `bd build` and then `bd preview` to check the site locally using localhost."
+	);
+	println!(
+		"    3. When done, execute `bd publish` (which may prompt to add a remote HTTP or SSH) - make sure Repo Settings -> Pages -> Source: GitHub Actions."
+	);
+
+	Ok(())
+}
+
+fn default_blog() -> BlogConfig {
+	BlogConfig {
+		title: "Default Blog".to_string(),
 		description: "Auto-generated blog by bd".to_string(),
 		author: "User".to_string(),
 		language: "en".to_string(),
 		build: BuildConfig::default(),
-	};
+	}
+}
+
+fn write_blog_config(location: &Path, blog: &BlogConfig) -> Result<()> {
 	let blog_toml = toml::to_string_pretty(&blog).context("init: failed to serialize blog.toml")?;
 	fs::write(location.join(BLOG_CONFIG), blog_toml).with_context(|| {
 		format!(
@@ -100,8 +114,40 @@ pub fn run(location: &Path) -> Result<()> {
 		)
 	})?;
 
-	write_gitignore(&location.join(".gitignore"))?;
+	Ok(())
+}
 
+fn write_gitignore(path: &Path) -> Result<()> {
+	let mut contents = if path.exists() {
+		fs::read_to_string(path).with_context(|| format!("failed to read {}", path.display()))?
+	} else {
+		String::new()
+	};
+
+	if !contents.is_empty() && !contents.ends_with('\n') {
+		contents.push('\n');
+	}
+
+	let mut lines: Vec<&str> = GITIGNORE
+		.lines()
+		.map(str::trim)
+		.filter(|line| !line.is_empty())
+		.collect();
+	if lines.is_empty() {
+		lines = vec!["/build", ".DS_Store"];
+	}
+
+	for line in lines {
+		if !contents.lines().any(|existing| existing.trim() == line) {
+			contents.push_str(line);
+			contents.push('\n');
+		}
+	}
+
+	fs::write(path, contents).with_context(|| format!("failed to write {}", path.display()))
+}
+
+fn write_workflow(location: &Path) -> Result<()> {
 	let workflow_dir = location.join(".github/workflows");
 	fs::create_dir_all(&workflow_dir)
 		.with_context(|| format!("init: failed to create {}", workflow_dir.display()))?;
@@ -113,6 +159,10 @@ pub fn run(location: &Path) -> Result<()> {
 	fs::write(&workflow_path, workflow)
 		.with_context(|| format!("init: failed to write {}", workflow_path.display()))?;
 
+	Ok(())
+}
+
+fn write_templates(location: &Path) -> Result<()> {
 	let templates_dir = location.join("templates");
 	fs::create_dir_all(&templates_dir)
 		.with_context(|| format!("init: failed to create {}", templates_dir.display()))?;
@@ -122,26 +172,47 @@ pub fn run(location: &Path) -> Result<()> {
 			.with_context(|| format!("init: failed to write {}", path.display()))?;
 	}
 
+	Ok(())
+}
+
+fn write_static(location: &Path) -> Result<()> {
 	let static_dir = location.join("static");
 	fs::create_dir_all(&static_dir)
 		.with_context(|| format!("init: failed to create {}", static_dir.display()))?;
+
 	let style_path = static_dir.join("style.css");
 	fs::write(&style_path, STYLE_CSS)
 		.with_context(|| format!("init: failed to write {}", style_path.display()))?;
 
+	Ok(())
+}
+
+fn write_readme(location: &Path, blog: &BlogConfig, force: bool) -> Result<()> {
 	let readme_path = location.join("README.md");
-	if !readme_path.exists() {
-		let readme = README_TEMPLATE.replace("__BLOG_TITLE__", &blog.title);
-		fs::write(&readme_path, readme)
-			.with_context(|| format!("init: failed to write: {}", readme_path.display()))?;
+	if !force && readme_path.exists() {
+		return Ok(());
 	}
 
+	let readme = README_TEMPLATE.replace("__BLOG_TITLE__", &blog.title);
+	fs::write(&readme_path, readme)
+		.with_context(|| format!("init: failed to write: {}", readme_path.display()))?;
+
+	Ok(())
+}
+
+fn write_about(location: &Path, force: bool) -> Result<()> {
 	let about_path = location.join("about.md");
-	if !about_path.exists() {
-		fs::write(&about_path, ABOUT)
-			.with_context(|| format!("init: failed to write {}", about_path.display()))?;
+	if !force && about_path.exists() {
+		return Ok(());
 	}
 
+	fs::write(&about_path, ABOUT)
+		.with_context(|| format!("init: failed to write {}", about_path.display()))?;
+
+	Ok(())
+}
+
+fn write_default_page(location: &Path) -> Result<()> {
 	let page_dir = location.join(DEFAULT_PAGE);
 	fs::create_dir_all(&page_dir)
 		.with_context(|| format!("init: failed to create {}", page_dir.display()))?;
@@ -179,55 +250,56 @@ pub fn run(location: &Path) -> Result<()> {
 		)
 	})?;
 
-	if needs_git_init {
-		git::init(&location)?;
-	}
-
-	println!("Initialized bd blog in {}", location.display());
-	println!();
-	println!("Next steps:");
-	println!("    1. Use `bd add [name]` to create a new page");
-	println!(
-		"    2. Edit the blog.toml with your own information and edit page.md inside each directory"
-	);
-	println!(
-		"    3. Run `bd build` and then `bd preview` to check the site locally using localhost."
-	);
-	println!(
-		"    3. When done, execute `bd publish` (which may prompt to add a remote HTTP or SSH) - make sure Repo Settings -> Pages -> Source: GitHub Actions."
-	);
-
 	Ok(())
 }
 
-fn write_gitignore(path: &Path) -> Result<()> {
-	let mut contents = if path.exists() {
-		fs::read_to_string(path).with_context(|| format!("failed to read {}", path.display()))?
-	} else {
-		String::new()
-	};
-
-	if !contents.is_empty() && !contents.ends_with('\n') {
-		contents.push('\n');
+fn upgrade_scaffolding(location: &Path) -> Result<()> {
+	if !location.join(BLOG_CONFIG).is_file() {
+		bail!(
+			"init --upgrade: {} does not contain {BLOG_CONFIG}; run `bd init {}` first",
+			location.display(),
+			location.display()
+		);
 	}
 
-	let mut lines: Vec<&str> = GITIGNORE
-		.lines()
-		.map(str::trim)
-		.filter(|line| !line.is_empty())
-		.collect();
-	if lines.is_empty() {
-		lines = vec!["/build", ".DS_Store"];
+	write_templates(location)?;
+	write_static(location)?;
+
+	println!("Upgrade templates/ and static/ in {}", location.display());
+	Ok(())
+}
+
+fn refuse_existing(location: &Path) -> Result<()> {
+	if location.join(BLOG_CONFIG).exists() {
+		bail!(
+			"init: {} already contains {BLOG_CONFIG}",
+			location.display()
+		);
 	}
 
-	for line in lines {
-		if !contents.lines().any(|existing| existing.trim() == line) {
-			contents.push_str(line);
-			contents.push('\n');
-		}
+	if location.join(DEFAULT_PAGE).exists() {
+		bail!(
+			"init: {} already contains a {DEFAULT_PAGE} page",
+			location.display()
+		);
 	}
 
-	fs::write(path, contents).with_context(|| format!("failed to write {}", path.display()))
+	if location.join(".github/workflows/pages.yml").exists() {
+		bail!(
+			"init: {} already contains .github/workflows/pages.yml",
+			location.display()
+		);
+	}
+
+	if location.join("templates").exists() {
+		bail!("init: {} already contains templates", location.display());
+	}
+
+	if location.join("static").exists() {
+		bail!("init: {} already contains static", location.display());
+	}
+
+	Ok(())
 }
 
 #[cfg(test)]
@@ -272,7 +344,7 @@ mod tests {
 		let temp = tempfile::tempdir().unwrap();
 		fs::write(temp.path().join(BLOG_CONFIG), "title = \"Existing\"\n").unwrap();
 
-		let error = run(temp.path()).unwrap_err().to_string();
+		let error = run(temp.path(), false, false).unwrap_err().to_string();
 
 		assert!(error.contains("already contains blog.toml"), "{error}");
 	}
@@ -282,7 +354,7 @@ mod tests {
 		let temp = tempfile::tempdir().unwrap();
 		fs::create_dir(temp.path().join("templates")).unwrap();
 
-		let error = run(temp.path()).unwrap_err().to_string();
+		let error = run(temp.path(), false, false).unwrap_err().to_string();
 
 		assert!(error.contains("already contains templates"), "{error}");
 	}
@@ -292,7 +364,7 @@ mod tests {
 		let temp = tempfile::tempdir().unwrap();
 		fs::create_dir(temp.path().join("static")).unwrap();
 
-		let error = run(temp.path()).unwrap_err().to_string();
+		let error = run(temp.path(), false, false).unwrap_err().to_string();
 
 		assert!(error.contains("already contains static"), "{error}");
 	}
@@ -348,5 +420,82 @@ mod tests {
 		write_gitignore(&path).unwrap();
 
 		assert_eq!(fs::read_to_string(&path).unwrap(), first);
+	}
+
+	#[test]
+	fn run_upgrade_requires_blog_config() {
+		let temp = tempfile::tempdir().unwrap();
+
+		let error = run(temp.path(), false, true).unwrap_err().to_string();
+
+		assert!(error.contains("does not contain blog.toml"), "{error}");
+	}
+
+	#[test]
+	fn run_force_resets_generated_files_and_keeps_extras() {
+		let temp = tempfile::tempdir().unwrap();
+		let root = temp.path();
+
+		fs::create_dir(root.join(".git")).unwrap();
+		fs::write(root.join(BLOG_CONFIG), "title = \"Custom\"\n").unwrap();
+		fs::write(root.join("README.md"), "# Custom\n").unwrap();
+		fs::write(root.join("about.md"), "# Custom\n").unwrap();
+		fs::write(root.join(".gitignore"), "custom-ignore\n").unwrap();
+
+		fs::create_dir_all(root.join("templates")).unwrap();
+		fs::write(root.join("templates/base.html"), "old").unwrap();
+		fs::write(root.join("templates/custom.html"), "keep").unwrap();
+
+		fs::create_dir_all(root.join("static")).unwrap();
+		fs::write(root.join("static/style.html"), "old").unwrap();
+		fs::write(root.join("static/CNAME"), "example.com\n").unwrap();
+
+		fs::create_dir_all(root.join(DEFAULT_PAGE)).unwrap();
+		fs::write(root.join(DEFAULT_PAGE).join("page.md"), "old").unwrap();
+		fs::write(root.join(DEFAULT_PAGE).join("extra.txt"), "keep").unwrap();
+
+		fs::create_dir_all(root.join("notes")).unwrap();
+		fs::write(root.join("notes/keep.txt"), "keep").unwrap();
+
+		run(root, true, false).unwrap();
+
+		let config: BlogConfig =
+			toml::from_str(&fs::read_to_string(root.join(BLOG_CONFIG)).unwrap()).unwrap();
+		assert_eq!(config.title, "Default Blog");
+		assert!(
+			fs::read_to_string(root.join("README.md"))
+				.unwrap()
+				.contains("# Default Blog")
+		);
+		assert!(
+			fs::read_to_string(root.join("about.md"))
+				.unwrap()
+				.contains("Write about")
+		);
+
+		assert!(
+			fs::read_to_string(root.join("templates/base.html"))
+				.unwrap()
+				.contains("{{ static_root }}style.css")
+		);
+		assert!(
+			fs::read_to_string(root.join("static/style.css"))
+				.unwrap()
+				.contains("Site-wide")
+		);
+		assert!(
+			fs::read_to_string(root.join(DEFAULT_PAGE).join("page.md"))
+				.unwrap()
+				.contains("Write your post here")
+		);
+
+		let gitignore = fs::read_to_string(root.join(".gitignore")).unwrap();
+		assert!(gitignore.contains("custom-ignore"));
+		assert!(gitignore.contains("/build"));
+
+		assert!(root.join("templates/custom.html").is_file());
+		assert!(root.join("static/CNAME").is_file());
+		assert!(root.join(DEFAULT_PAGE).join("extra.txt").is_file());
+		assert!(root.join("notes/keep.txt").is_file());
 	}
 }
