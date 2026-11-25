@@ -89,10 +89,33 @@ fn handle(root: &Path, request: Request) -> Result<()> {
 			Ok(())
 		}
 		Resolved::NotFound => {
-			let response = text_response(StatusCode(404), "404 Not Found\n");
+			let data = match fs::read(root.join("404.html")) {
+				Ok(data) => data,
+				Err(error) => {
+					let (status, body) = match error.kind() {
+						io::ErrorKind::NotFound => (StatusCode(404), "404 Not Found\n".to_string()),
+						io::ErrorKind::PermissionDenied => {
+							(StatusCode(403), "403 Forbidden\n".to_string())
+						}
+						_ => (
+							StatusCode(500),
+							format!("500 Internal Server Error\n\n{error}\n"),
+						),
+					};
+					let response = text_response(status, &body);
+					request
+						.respond(response)
+						.context("failed to send error response")?;
+					return Ok(());
+				}
+			};
+			let response = Response::from_data(data)
+				.with_status_code(404)
+				.with_header(header("Content-Type", get_content_type("html")))
+				.with_header(header("Cache-Control", "no-store"));
 			request
 				.respond(response)
-				.context("failed to send 404 response")?;
+				.context("failed to send response")?;
 			Ok(())
 		}
 	}
@@ -218,7 +241,11 @@ fn content_type(path: &Path) -> &'static str {
 		.unwrap_or_default()
 		.to_ascii_lowercase();
 
-	match extension.as_str() {
+	get_content_type(&extension)
+}
+
+fn get_content_type(ext: &str) -> &'static str {
+	match ext {
 		"html" | "htm" => "text/html; charset=utf-8",
 		"css" => "text/css; charset=utf-8",
 		"js" | "mjs" => "text/javascript; charset=utf-8",

@@ -18,6 +18,7 @@ pub(crate) const INDEX_TEMPLATE: &str = include_str!("templates/index.html");
 pub(crate) const POST_TEMPLATE: &str = include_str!("templates/post.html");
 pub(crate) const TAG_TEMPLATE: &str = include_str!("templates/tag.html");
 pub(crate) const TAGS_TEMPLATE: &str = include_str!("templates/tags.html");
+pub(crate) const NOT_FOUND_TEMPLATE: &str = include_str!("templates/404.html");
 const SEARCH_TEMPLATE: &str = include_str!("templates/search.json");
 
 pub struct Renderer {
@@ -89,6 +90,8 @@ impl Renderer {
 			.context("failed to load tags.html template")?;
 		env.add_template("search.json", SEARCH_TEMPLATE)
 			.context("failed to load search.json template")?;
+		env.add_template("404.html", NOT_FOUND_TEMPLATE)
+			.context("failed to load 404.html template")?;
 
 		Ok(Self { env })
 	}
@@ -185,6 +188,18 @@ impl Renderer {
 			.render(context! { posts => Serde(posts) })
 			.context("failed to render search.json template")
 	}
+
+	pub fn not_found(&self, blog: &BlogConfig, nav: Nav) -> Result<String> {
+		let ctx = context! {
+			..site_context(blog, "/", "/", "/tags/", Some("/tags/"), nav.has_about.then_some("/about/"), nav),
+		};
+
+		self.env
+			.get_template("404.html")
+			.context("failed to find 404.html")?
+			.render(ctx)
+			.context("failed to render 404.html template")
+	}
 }
 
 fn site_context(
@@ -206,6 +221,7 @@ fn site_context(
 		has_about => nav.has_about,
 		tags_url => Value::from_safe_string(tags_url.unwrap_or("").to_string()),
 		about_url => Value::from_safe_string(about_url.unwrap_or("").to_string()),
+		favicon_url => favicon_url(blog, static_root),
 	}
 }
 
@@ -269,6 +285,19 @@ fn is_template_file(path: &Path) -> bool {
 	)
 }
 
+fn favicon_url(blog: &BlogConfig, static_root: &str) -> Option<String> {
+	let favicon = blog.favicon.trim();
+	if favicon.is_empty() {
+		return None;
+	}
+
+	if favicon.starts_with("/") || favicon.contains("://") || favicon.starts_with("data:") {
+		Some(favicon.to_string())
+	} else {
+		Some(format!("{static_root}{favicon}"))
+	}
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -280,6 +309,7 @@ mod tests {
 			description: "A description".to_string(),
 			author: "Ada".to_string(),
 			language: "en".to_string(),
+			favicon: String::new(),
 			build: BuildConfig::default(),
 		}
 	}

@@ -36,6 +36,7 @@ struct BuildOutput<'a> {
 	search: String,
 	tags: Option<TagOutput<'a>>,
 	about: Option<String>,
+	not_found: String,
 }
 
 struct TagOutput<'a> {
@@ -164,6 +165,8 @@ pub fn build(args: &BuildArgs) -> Result<BuildOutcome> {
 		None => None,
 	};
 
+	let not_found = renderer.not_found(&blog, nav)?;
+
 	let parent = output
 		.parent()
 		.context("build output has no parent directory")?;
@@ -176,6 +179,7 @@ pub fn build(args: &BuildArgs) -> Result<BuildOutcome> {
 		search,
 		tags,
 		about,
+		not_found,
 	};
 
 	write_build(&root, staging.path(), &artifacts, &page_slugs, args.verbose)?;
@@ -505,6 +509,10 @@ fn write_build(
 
 	if let Some(about) = &build.about {
 		write_output(&output.join("about/index.html"), about)?;
+	}
+
+	if !output.join("404.html").exists() {
+		write_output(&output.join("404.html"), &build.not_found)?;
 	}
 
 	Ok(())

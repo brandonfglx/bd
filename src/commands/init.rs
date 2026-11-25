@@ -8,7 +8,8 @@ use crate::config::{BLOG_CONFIG, BlogConfig, BuildConfig};
 use crate::git;
 use crate::page::{PAGE_META, PageFile, format_date, today};
 use crate::render::{
-	ABOUT_TEMPLATE, BASE_TEMPLATE, INDEX_TEMPLATE, POST_TEMPLATE, TAG_TEMPLATE, TAGS_TEMPLATE,
+	ABOUT_TEMPLATE, BASE_TEMPLATE, INDEX_TEMPLATE, NOT_FOUND_TEMPLATE, POST_TEMPLATE, TAG_TEMPLATE,
+	TAGS_TEMPLATE,
 };
 
 const GITIGNORE: &str = include_str!("../base/.gitignore");
@@ -23,6 +24,7 @@ const TEMPLATES: &[(&str, &str)] = &[
 	("post.html", POST_TEMPLATE),
 	("tag.html", TAG_TEMPLATE),
 	("tags.html", TAGS_TEMPLATE),
+	("404.html", NOT_FOUND_TEMPLATE),
 ];
 const DEFAULT_PAGE: &str = "my-page";
 const BD_REPO: &str = "brandonfglx/bd";
@@ -91,6 +93,7 @@ fn default_blog() -> BlogConfig {
 		description: "Auto-generated blog by bd".to_string(),
 		author: "User".to_string(),
 		language: "en".to_string(),
+		favicon: String::new(),
 		build: BuildConfig::default(),
 	}
 }

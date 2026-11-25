@@ -16,6 +16,8 @@ pub struct BlogConfig {
 	#[serde(default = "default_language")]
 	pub language: String,
 	#[serde(default)]
+	pub favicon: String,
+	#[serde(default)]
 	pub build: BuildConfig,
 }
 
