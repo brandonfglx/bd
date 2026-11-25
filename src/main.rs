@@ -7,6 +7,7 @@ mod page;
 mod render;
 mod server;
 mod slug;
+mod tags;
 
 use std::process::ExitCode;
 

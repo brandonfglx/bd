@@ -8,6 +8,7 @@ use time::macros::format_description;
 use time::{Date, OffsetDateTime, UtcOffset};
 
 use crate::slug;
+use crate::tags::{self, Tag};
 
 pub const PAGE_META: &str = "page.toml";
 pub const DEFAULT_CONTENT: &str = "page.md";
@@ -24,6 +25,8 @@ pub struct PageFile {
 	pub date: String,
 	#[serde(default)]
 	pub draft: bool,
+	#[serde(default, skip_serializing_if = "Vec::is_empty")]
+	pub tags: Vec<String>,
 	#[serde(default = "default_content")]
 	pub content: String,
 }
@@ -36,9 +39,16 @@ pub struct Page {
 	pub date_str: String,
 	pub date_display: String,
 	pub draft: bool,
+	pub tags: Vec<Tag>,
 	pub dir: PathBuf,
 	pub content_rel: PathBuf,
 	pub content_path: PathBuf,
+}
+
+impl Page {
+	pub fn is_future(&self, today: Date) -> bool {
+		self.date > today
+	}
 }
 
 // Returns a String of the default content
@@ -123,6 +133,7 @@ pub fn load_page(dir: &Path) -> Result<Page> {
 	let date = parse_date(&file.date).with_context(|| format!("in {}", meta_path.display()))?;
 	let date_str = format_date(date)?;
 	let date_display = format_date_display(date)?;
+	let tags = tags::normalize(&file.tags, &meta_path)?;
 
 	let rel = Path::new(&file.content);
 	if rel.as_os_str().is_empty() {
@@ -178,6 +189,7 @@ pub fn load_page(dir: &Path) -> Result<Page> {
 		date_str,
 		date_display,
 		draft: file.draft,
+		tags,
 		dir: dir.to_path_buf(),
 		content_rel: rel.to_path_buf(),
 		content_path,

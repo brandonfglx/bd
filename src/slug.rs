@@ -1,32 +1,11 @@
 use anyhow::{Result, bail};
 
 const MAX_LENGTH: usize = 80;
-const RESERVED: &[&str] = &[
-	"build",
-	"static",
-	"templates",
-	"con",
-	"prn",
-	"aux",
-	"nul",
-	"com1",
-	"com2",
-	"com3",
-	"com4",
-	"com5",
-	"com6",
-	"com7",
-	"com8",
-	"com9",
-	"lpt1",
-	"lpt2",
-	"lpt3",
-	"lpt4",
-	"lpt5",
-	"lpt6",
-	"lpt7",
-	"lpt8",
-	"lpt9",
+const RESERVED: &[&str] = &["about", "build", "static", "tags", "templates"];
+const STRUCTURAL_RESERVED: &[&str] = &["build", "static", "templates"];
+const WINDOWS_RESERVED: &[&str] = &[
+	"con", "prn", "aux", "nul", "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8",
+	"com9", "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9",
 ];
 
 pub fn slugify(title: &str) -> String {
@@ -34,6 +13,36 @@ pub fn slugify(title: &str) -> String {
 }
 
 pub fn validate(slug: &str) -> Result<()> {
+	validate_format(slug)?;
+
+	if RESERVED.contains(&slug) || WINDOWS_RESERVED.contains(&slug) {
+		bail!("slug {slug:?} is reserved");
+	}
+
+	Ok(())
+}
+
+pub fn validate_tag(slug: &str) -> Result<()> {
+	validate_format(slug)?;
+
+	if WINDOWS_RESERVED.contains(&slug) {
+		bail!("slug {slug:?} is reserved");
+	}
+
+	Ok(())
+}
+
+pub fn validate_existing(slug: &str) -> Result<()> {
+	validate_format(slug)?;
+
+	if STRUCTURAL_RESERVED.contains(&slug) || WINDOWS_RESERVED.contains(&slug) {
+		bail!("slug {slug:?} is reserved");
+	}
+
+	Ok(())
+}
+
+pub fn validate_format(slug: &str) -> Result<()> {
 	if slug.is_empty() {
 		bail!("slug cannot be empty");
 	}
@@ -51,10 +60,6 @@ pub fn validate(slug: &str) -> Result<()> {
 		.all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
 	{
 		bail!("slug may only contain lowercase ASCII letters, digits, and '-'");
-	}
-
-	if RESERVED.contains(&slug) {
-		bail!("slug {slug:?} is reserved");
 	}
 
 	Ok(())
@@ -130,6 +135,34 @@ mod tests {
 			"lpt9",
 		] {
 			assert!(validate(slug).is_err(), "{slug:?} should be reserved");
+		}
+	}
+
+	#[test]
+	fn validate_tag_allows_structural_names_but_rejects_windows_devices() {
+		for slug in ["about", "tags", "build", "static", "templates", "hello"] {
+			assert!(validate_tag(slug).is_ok(), "{slug:?} should be valid");
+		}
+
+		for slug in ["con", "prn", "aux", "nul", "com1", "lpt9"] {
+			assert!(validate_tag(slug).is_err(), "{slug:?} should be reserved");
+		}
+	}
+
+	#[test]
+	fn validate_existing_allows_about_and_tags() {
+		for slug in ["about", "tags", "hello"] {
+			assert!(
+				validate_existing(slug).is_ok(),
+				"{slug:?} should be allowed"
+			);
+		}
+
+		for slug in ["build", "static", "templates", "con"] {
+			assert!(
+				validate_existing(slug).is_err(),
+				"{slug:?} should be reserved"
+			);
 		}
 	}
 }

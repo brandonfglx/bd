@@ -24,7 +24,7 @@ impl PreviewServer {
 			.canonicalize()
 			.with_context(|| format!("failed to resolve {}", root.display()))?;
 		if !root.is_dir() {
-			bail!("preview root is not a director: {}", root.display());
+			bail!("preview root is not a directory: {}", root.display());
 		}
 
 		let address = format!("{host}:{port}");

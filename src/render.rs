@@ -10,10 +10,15 @@ use walkdir::WalkDir;
 
 use crate::config::BlogConfig;
 use crate::page::Page;
+use crate::tags::{Tag, TagSummary};
 
 pub(crate) const BASE_TEMPLATE: &str = include_str!("templates/base.html");
+pub(crate) const ABOUT_TEMPLATE: &str = include_str!("templates/about.html");
 pub(crate) const INDEX_TEMPLATE: &str = include_str!("templates/index.html");
 pub(crate) const POST_TEMPLATE: &str = include_str!("templates/post.html");
+pub(crate) const TAG_TEMPLATE: &str = include_str!("templates/tag.html");
+pub(crate) const TAGS_TEMPLATE: &str = include_str!("templates/tags.html");
+const SEARCH_TEMPLATE: &str = include_str!("templates/search.json");
 
 pub struct Renderer {
 	env: Environment<'static>,
@@ -27,6 +32,7 @@ pub struct PostView<'a> {
 	pub date: &'a str,
 	pub date_display: &'a str,
 	pub draft: bool,
+	pub tags: &'a [Tag],
 }
 
 impl<'a> From<&'a Page> for PostView<'a> {
@@ -38,6 +44,30 @@ impl<'a> From<&'a Page> for PostView<'a> {
 			date: &page.date_str,
 			date_display: &page.date_display,
 			draft: page.draft,
+			tags: &page.tags,
+		}
+	}
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Nav {
+	pub has_tags: bool,
+	pub has_about: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TagView<'a> {
+	pub name: &'a str,
+	pub slug: &'a str,
+	pub count: usize,
+}
+
+impl<'a> From<&'a TagSummary> for TagView<'a> {
+	fn from(tag: &'a TagSummary) -> Self {
+		Self {
+			name: &tag.name,
+			slug: &tag.slug,
+			count: tag.count,
 		}
 	}
 }
@@ -47,10 +77,18 @@ impl Renderer {
 		let mut env = Environment::new();
 		env.add_template("base.html", BASE_TEMPLATE)
 			.context("failed to load base.html template")?;
+		env.add_template("about.html", ABOUT_TEMPLATE)
+			.context("failed to load about.html template")?;
 		env.add_template("index.html", INDEX_TEMPLATE)
 			.context("failed to load index.html template")?;
 		env.add_template("post.html", POST_TEMPLATE)
 			.context("failed to load post.html template")?;
+		env.add_template("tag.html", TAG_TEMPLATE)
+			.context("failed to load tag.html template")?;
+		env.add_template("tags.html", TAGS_TEMPLATE)
+			.context("failed to load tags.html template")?;
+		env.add_template("search.json", SEARCH_TEMPLATE)
+			.context("failed to load search.json template")?;
 
 		Ok(Self { env })
 	}
@@ -61,35 +99,113 @@ impl Renderer {
 		Ok(renderer)
 	}
 
-	pub fn index(&self, blog: &BlogConfig, posts: &[PostView<'_>]) -> Result<String> {
-		let year = OffsetDateTime::now_utc().year();
+	pub fn index(&self, blog: &BlogConfig, posts: &[PostView<'_>], nav: Nav) -> Result<String> {
+		let ctx = context! {
+			posts => Serde(posts),
+			..site_context(blog, "./", "./", "tags/", nav.has_tags.then_some("tags/"), nav.has_about.then_some("about/"), nav),
+		};
+
 		self.env
 			.get_template("index.html")
 			.context("failed to find index.html template")?
-			.render(context! {
-				blog => Serde(blog),
-				posts => Serde(posts),
-				year => year,
-				home_url => "./",
-				static_root => Value::from_safe_string("./".to_string()),
-			})
+			.render(ctx)
 			.context("failed to render index.html template")
 	}
 
-	pub fn post(&self, blog: &BlogConfig, post: &PostView<'_>, content: &str) -> Result<String> {
-		let year = OffsetDateTime::now_utc().year();
+	pub fn post(
+		&self,
+		blog: &BlogConfig,
+		post: &PostView<'_>,
+		content: &str,
+		nav: Nav,
+	) -> Result<String> {
+		let ctx = context! {
+			post => Serde(post),
+			content => content,
+			..site_context(blog, "../", "../", "../tags/", nav.has_tags.then_some("../tags/"), nav.has_about.then_some("../about/"), nav),
+		};
+
 		self.env
 			.get_template("post.html")
 			.context("failed to find post.html template")?
-			.render(context! {
-				blog => Serde(blog),
-				post => Serde(post),
-				content => content,
-				year => year,
-				home_url => "../",
-				static_root => Value::from_safe_string("../".to_string())
-			})
+			.render(ctx)
 			.context("failed to render post.html template")
+	}
+
+	pub fn tags(&self, blog: &BlogConfig, tags: &[TagView<'_>], nav: Nav) -> Result<String> {
+		let ctx = context! {
+			tags => Serde(tags),
+			..site_context(blog, "../", "../", "", Some("./"), nav.has_about.then_some("../about/"), nav),
+		};
+
+		self.env
+			.get_template("tags.html")
+			.context("failed to find tags.html template")?
+			.render(ctx)
+			.context("failed to render tags.html template")
+	}
+
+	pub fn tag(
+		&self,
+		blog: &BlogConfig,
+		tag: &TagView<'_>,
+		posts: &[PostView<'_>],
+		nav: Nav,
+	) -> Result<String> {
+		let ctx = context! {
+			tag => Serde(tag),
+			posts => Serde(posts),
+			..site_context(blog, "../../", "../../", "../../tags/", Some("../"), nav.has_about.then_some("../../about/"), nav),
+		};
+
+		self.env
+			.get_template("tag.html")
+			.context("failed to find tag.html template")?
+			.render(ctx)
+			.context("failed to render tag.html template")
+	}
+
+	pub fn about(&self, blog: &BlogConfig, content: &str, nav: Nav) -> Result<String> {
+		let ctx = context! {
+			content => content,
+			..site_context(blog, "../../", "../../", "../../tags/", Some("../"), nav.has_about.then_some("../../about/"), nav),
+		};
+
+		self.env
+			.get_template("about.html")
+			.context("failed to find about.html template")?
+			.render(ctx)
+			.context("failed to render about.html template")
+	}
+
+	pub fn search(&self, posts: &[PostView<'_>]) -> Result<String> {
+		self.env
+			.get_template("search.json")
+			.context("failed to find search.json template")?
+			.render(context! { posts => Serde(posts) })
+			.context("failed to render search.json template")
+	}
+}
+
+fn site_context(
+	blog: &BlogConfig,
+	home_url: &str,
+	static_root: &str,
+	tag_base: &str,
+	tags_url: Option<&str>,
+	about_url: Option<&str>,
+	nav: Nav,
+) -> Value {
+	context! {
+		blog => Serde(blog),
+		year => OffsetDateTime::now_utc().year(),
+		home_url => Value::from_safe_string(home_url.to_string()),
+		static_root => Value::from_safe_string(static_root.to_string()),
+		tag_base => Value::from_safe_string(tag_base.to_string()),
+		has_tags => nav.has_tags,
+		has_about => nav.has_about,
+		tags_url => Value::from_safe_string(tags_url.unwrap_or("").to_string()),
+		about_url => Value::from_safe_string(about_url.unwrap_or("").to_string()),
 	}
 }
 
@@ -147,7 +263,10 @@ fn is_template_file(path: &Path) -> bool {
 		return false;
 	};
 
-	matches!(extension, "html" | "htm" | "jinja" | "j2" | "txt" | "xml")
+	matches!(
+		extension,
+		"html" | "htm" | "jinja" | "j2" | "json" | "txt" | "xml"
+	)
 }
 
 #[cfg(test)]
@@ -176,6 +295,7 @@ mod tests {
 				date: "2024-02-01",
 				date_display: "February 1, 2024",
 				draft: false,
+				tags: &[],
 			},
 			PostView {
 				slug: "older",
@@ -184,16 +304,17 @@ mod tests {
 				date: "2024-01-01",
 				date_display: "January 1, 2024",
 				draft: false,
+				tags: &[],
 			},
 		];
 
-		let html = renderer.index(&blog(), &posts).unwrap();
+		let html = renderer.index(&blog(), &posts, Nav::default()).unwrap();
 
 		assert!(html.starts_with("<!DOCTYPE html>"));
 		assert!(html.contains("<html lang=\"en\">"));
 		assert!(html.contains("<title>My Blog</title>"));
 		assert!(html.contains("<meta name=\"description\" content=\"A description\">"));
-		assert!(html.contains("<a href=\"./\">My Blog</a>"));
+		assert!(html.contains("<a class=\"site-title\" href=\"./\">My Blog</a>"));
 		assert!(html.contains("<link rel=\"stylesheet\" href=\"./style.css\">"));
 		assert!(html.contains("<a href=\"newer/\">Newer</a>"));
 		assert!(html.contains("<a href=\"older/\">Older</a>"));
@@ -206,7 +327,7 @@ mod tests {
 	#[test]
 	fn renders_empty_index() {
 		let renderer = Renderer::new().unwrap();
-		let html = renderer.index(&blog(), &[]).unwrap();
+		let html = renderer.index(&blog(), &[], Nav::default()).unwrap();
 
 		assert!(html.contains("No posts yet."));
 		assert!(!html.contains("<ul class=\"posts\">"));
@@ -224,9 +345,10 @@ mod tests {
 			date: "2024-01-01",
 			date_display: "January 1, 2024",
 			draft: false,
+			tags: &[],
 		}];
 
-		let html = renderer.index(&config, &posts).unwrap();
+		let html = renderer.index(&config, &posts, Nav::default()).unwrap();
 
 		assert!(html.contains("A &amp; B &lt;Blog&gt;"));
 		assert!(html.contains("&lt;script&gt;alert(1)&lt;&#x2f;script&gt;"));
@@ -244,9 +366,12 @@ mod tests {
 			date: "2024-03-04",
 			date_display: "March 4, 2024",
 			draft: true,
+			tags: &[],
 		};
 
-		let html = renderer.post(&blog(), &post, "<p>Body</p>").unwrap();
+		let html = renderer
+			.post(&blog(), &post, "<p>Body</p>", Nav::default())
+			.unwrap();
 
 		assert!(html.contains("<title>Hello - My Blog</title>"));
 		assert!(html.contains("<h1>Hello</h1>"));
@@ -268,9 +393,10 @@ mod tests {
 			date: "2024-03-04",
 			date_display: "March 4, 2024",
 			draft: false,
+			tags: &[],
 		};
 
-		let html = renderer.post(&blog(), &post, "").unwrap();
+		let html = renderer.post(&blog(), &post, "", Nav::default()).unwrap();
 
 		assert!(!html.contains("<strong>draft</strong>"));
 		assert!(!html.contains("<meta name=\"description\""));
@@ -286,10 +412,16 @@ mod tests {
 			date: "2024-01-01",
 			date_display: "January 1, 2024",
 			draft: false,
+			tags: &[],
 		};
 
 		let html = renderer
-			.post(&blog(), &post, "<span id=\"raw\">raw</span>")
+			.post(
+				&blog(),
+				&post,
+				"<span id=\"raw\">raw</span>",
+				Nav::default(),
+			)
 			.unwrap();
 
 		assert!(html.contains("<span id=\"raw\">raw</span>"));
@@ -305,9 +437,10 @@ mod tests {
 			date: "2024-01-01",
 			date_display: "January 1, 2024",
 			draft: false,
+			tags: &[],
 		};
 
-		let html = renderer.post(&blog(), &post, "").unwrap();
+		let html = renderer.post(&blog(), &post, "", Nav::default()).unwrap();
 
 		assert!(html.contains("<title>A &amp; B - My Blog</title>"));
 		assert!(html.contains("<h1>A &amp; B</h1>"));
@@ -328,7 +461,7 @@ mod tests {
 		.unwrap();
 
 		let renderer = Renderer::with_root(temp.path()).unwrap();
-		let html = renderer.index(&blog(), &[]).unwrap();
+		let html = renderer.index(&blog(), &[], Nav::default()).unwrap();
 
 		assert_eq!(html, "PARTIAL:My Blog:./style.css");
 	}
@@ -348,8 +481,9 @@ mod tests {
 			date: "2024-01-01",
 			date_display: "January 1, 2024",
 			draft: false,
+			tags: &[],
 		};
-		let html = renderer.post(&blog(), &post, "").unwrap();
+		let html = renderer.post(&blog(), &post, "", Nav::default()).unwrap();
 
 		assert!(html.contains("All posts"));
 		assert!(!html.contains("CUSTOM"));
