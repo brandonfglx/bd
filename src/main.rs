@@ -39,8 +39,9 @@ fn run() -> anyhow::Result<()> {
 			slug,
 			date,
 			draft,
-		} => commands::add::run(&title, slug.as_deref(), date.as_deref(), draft),
-		Command::Rm { slug, force } => commands::rm::run(&slug, force),
+			tags,
+		} => commands::add::run(&title, slug.as_deref(), date.as_deref(), draft, &tags),
+		Command::Rm { slug, force, tags } => commands::rm::run(&slug, force, &tags),
 		Command::Build {
 			drafts,
 			output,

@@ -1,13 +1,14 @@
 use std::fs;
 use std::io::{self, IsTerminal, Write};
+use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 
 use crate::config::BlogConfig;
-use crate::page::PAGE_META;
+use crate::page::{PAGE_META, PageFile};
 use crate::slug;
 
-pub fn run(slug: &str, force: bool) -> Result<()> {
+pub fn run(slug: &str, force: bool, tags: &[String]) -> Result<()> {
 	let cwd = std::env::current_dir().context("failed to determine current directory")?;
 	let root = BlogConfig::find_root(&cwd)?;
 
@@ -25,7 +26,12 @@ pub fn run(slug: &str, force: bool) -> Result<()> {
 	let metadata = fs::symlink_metadata(&dir)
 		.with_context(|| format!("failed to inspect {}", dir.display()))?;
 	if metadata.file_type().is_symlink() {
-		bail!("refusing to remove symlink: {}", dir.display());
+		let action = if tags.is_empty() { "remove" } else { "edit" };
+		bail!("refusing to {action} symlink: {}", dir.display());
+	}
+
+	if !tags.is_empty() {
+		return remove_tags(&dir, slug, tags);
 	}
 
 	if !force {
@@ -50,4 +56,62 @@ pub fn run(slug: &str, force: bool) -> Result<()> {
 	fs::remove_dir_all(&dir).with_context(|| format!("failed to remove {}", dir.display()))?;
 	println!("Removed page \"{slug}\"");
 	Ok(())
+}
+
+fn remove_tags(dir: &Path, slug: &str, tags: &[String]) -> Result<()> {
+	let meta_path = dir.join(PAGE_META);
+	let metadata = fs::symlink_metadata(&meta_path)
+		.with_context(|| format!("failed to inspect {}", meta_path.display()))?;
+	if metadata.file_type().is_symlink() {
+		bail!("cannot edit symlink: {}", meta_path.display());
+	}
+
+	let text = fs::read_to_string(&meta_path)
+		.with_context(|| format!("failed to read {}", meta_path.display()))?;
+	let mut page: PageFile = toml::from_str(&text)
+		.with_context(|| format!("failed to parse {}", meta_path.display()))?;
+
+	let requested = requested_slugs(tags)?;
+	let before = page.tags.len();
+	page.tags.retain(|tag| {
+		let tag_slug = slug::slugify(tag.trim());
+		!requested.iter().any(|req| req == &tag_slug)
+	});
+	let removed = before - page.tags.len();
+
+	if removed == 0 {
+		bail!("page \"{slug}\" has none of the requested tags");
+	}
+
+	let meta = toml::to_string_pretty(&page).context("failed to serialize page.toml")?;
+	fs::write(&meta_path, meta)
+		.with_context(|| format!("failed to write {}", meta_path.display()))?;
+
+	println!(
+		"Removed {removed} tag{} from page \"{slug}\"",
+		if removed == 1 { "" } else { "s" }
+	);
+	Ok(())
+}
+
+fn requested_slugs(tags: &[String]) -> Result<Vec<String>> {
+	let mut slugs = Vec::new();
+
+	for value in tags {
+		let name = value.trim();
+		if name.is_empty() {
+			bail!("tag cannot be empty");
+		}
+
+		let tag_slug = slug::slugify(name);
+		if tag_slug.is_empty() {
+			bail!("tag {name:?} cannot be converted to a URL slug");
+		}
+
+		if !slugs.contains(&tag_slug) {
+			slugs.push(tag_slug);
+		}
+	}
+
+	Ok(slugs)
 }

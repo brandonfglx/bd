@@ -22,11 +22,15 @@ pub enum Command {
 		date: Option<String>,
 		#[arg(long)]
 		draft: bool,
+		#[arg(long = "tag", value_name = "TAG")]
+		tags: Vec<String>,
 	},
 	Rm {
 		slug: String,
 		#[arg(short, long)]
 		force: bool,
+		#[arg(long = "tag", value_name = "TAG")]
+		tags: Vec<String>,
 	},
 	Build {
 		#[arg(long)]

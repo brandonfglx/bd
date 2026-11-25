@@ -155,7 +155,7 @@ impl Renderer {
 		let ctx = context! {
 			tag => Serde(tag),
 			posts => Serde(posts),
-			..site_context(blog, "../", "../", "../tags/", Some("../tags/"), nav.has_about.then_some("./"), nav),
+			..site_context(blog, "../../", "../../", "../../tags/", Some("../"), nav.has_about.then_some("../../about/"), nav),
 		};
 
 		self.env
@@ -168,7 +168,7 @@ impl Renderer {
 	pub fn about(&self, blog: &BlogConfig, content: &str, nav: Nav) -> Result<String> {
 		let ctx = context! {
 			content => content,
-			..site_context(blog, "../../", "../../", "../../tags/", Some("../"), nav.has_about.then_some("../../about/"), nav),
+			..site_context(blog, "../", "../", "../tags/", Some("../tags/"), nav.has_about.then_some("./"), nav),
 		};
 
 		self.env
