@@ -21,6 +21,19 @@ fn local_date() -> String {
 		.unwrap()
 }
 
+fn tags_of(blog: &Path, slug: &str) -> Vec<String> {
+	let meta: toml::Value = toml::from_str(&read(common::page_toml(blog, slug)))
+		.expect("page.toml should be valid TOML");
+	meta.get("tags")
+		.and_then(|value| value.as_array())
+		.map(|tags| {
+			tags.iter()
+				.filter_map(|tag| tag.as_str().map(str::to_string))
+				.collect()
+		})
+		.unwrap_or_default()
+}
+
 #[test]
 fn add_creates_page_from_title() {
 	let temp = TempDir::new().unwrap();
@@ -381,4 +394,349 @@ fn rm_refuses_symlink() {
 		.stderr(predicate::str::contains("refusing to remove symlink"));
 
 	assert!(blog.join("my-page/page.toml").is_file());
+}
+
+#[test]
+fn add_supports_tags() {
+	let temp = TempDir::new().unwrap();
+	let blog = temp.path().join("blog");
+	init_blog(&blog);
+
+	add_ok(
+		&blog,
+		&[
+			"Tagged",
+			"--slug",
+			"tagged",
+			"--date",
+			"2024-01-01",
+			"--tag",
+			"Web Dev",
+			"--tag",
+			"Rust",
+		],
+	);
+
+	assert_eq!(tags_of(&blog, "tagged"), ["Rust", "Web Dev"]);
+}
+
+#[test]
+fn add_deduplicates_tags() {
+	let temp = TempDir::new().unwrap();
+	let blog = temp.path().join("blog");
+	init_blog(&blog);
+
+	add_ok(
+		&blog,
+		&[
+			"Duplicate",
+			"--date",
+			"2024-01-01",
+			"--tag",
+			"Rust",
+			"--tag",
+			" Rust ",
+		],
+	);
+
+	assert_eq!(tags_of(&blog, "duplicate"), ["Rust"]);
+}
+
+#[test]
+fn add_rejects_invalid_tags() {
+	let temp = TempDir::new().unwrap();
+	let blog = temp.path().join("blog");
+	init_blog(&blog);
+
+	bd_in(&blog)
+		.args(["add", "Empty", "--date", "2024-01-01", "--tag", " "])
+		.assert()
+		.failure()
+		.stderr(predicate::str::contains("tag cannot be empty"));
+	assert!(!blog.join("empty").exists());
+
+	bd_in(&blog)
+		.args(["add", "Reserved", "--date", "2024-01-01", "--tag", "con"])
+		.assert()
+		.failure()
+		.stderr(predicate::str::contains("invalid tag"));
+	assert!(!blog.join("reserved").exists());
+
+	bd_in(&blog)
+		.args([
+			"add",
+			"Collision",
+			"--date",
+			"2024-01-01",
+			"--tag",
+			"Rust",
+			"--tag",
+			"rust",
+		])
+		.assert()
+		.failure()
+		.stderr(predicate::str::contains("both use the slug"));
+	assert!(!blog.join("collision").exists());
+}
+
+#[test]
+fn add_tags_to_existing_page() {
+	let temp = TempDir::new().unwrap();
+	let blog = temp.path().join("blog");
+	init_blog(&blog);
+
+	add_ok(
+		&blog,
+		&[
+			"Existing",
+			"--slug",
+			"existing",
+			"--date",
+			"2024-01-01",
+			"--tag",
+			"Rust",
+		],
+	);
+	add_ok(
+		&blog,
+		&["Different Title", "--slug", "existing", "--tag", "Web Dev"],
+	);
+
+	assert_eq!(tags_of(&blog, "existing"), ["Rust", "Web Dev"]);
+
+	let meta: toml::Value =
+		toml::from_str(&read(blog.join("existing/page.toml"))).expect("valid page.toml");
+	assert_eq!(
+		meta.get("title").and_then(|value| value.as_str()),
+		Some("Existing")
+	);
+}
+
+#[test]
+fn add_existing_tag_is_noop() {
+	let temp = TempDir::new().unwrap();
+	let blog = temp.path().join("blog");
+	init_blog(&blog);
+
+	add_ok(
+		&blog,
+		&[
+			"Existing",
+			"--slug",
+			"existing",
+			"--date",
+			"2024-01-01",
+			"--tag",
+			"Rust",
+		],
+	);
+	let before = read(blog.join("existing/page.toml"));
+
+	bd_in(&blog)
+		.args(["add", "Existing", "--slug", "existing", "--tag", "Rust"])
+		.assert()
+		.success()
+		.stdout(predicate::str::contains("already has the requested tags"));
+
+	assert_eq!(read(blog.join("existing/page.toml")), before);
+}
+
+#[test]
+fn add_tags_to_existing_page_reflects_date_and_draft() {
+	let temp = TempDir::new().unwrap();
+	let blog = temp.path().join("blog");
+	init_blog(&blog);
+
+	add_ok(
+		&blog,
+		&["Existing", "--slug", "existing", "--date", "2024-01-01"],
+	);
+
+	for args in [
+		vec![
+			"add",
+			"Existing",
+			"--slug",
+			"existing",
+			"--tag",
+			"Rust",
+			"--date",
+			"2025-01-01",
+		],
+		vec![
+			"add", "Existing", "--slug", "existing", "--tag", "Rust", "--draft",
+		],
+	] {
+		bd_in(&blog)
+			.args(args)
+			.assert()
+			.failure()
+			.stderr(predicate::str::contains("cannot be used when adding tags"));
+	}
+}
+
+#[test]
+fn rm_tag_removes_only_requested_tags() {
+	let temp = TempDir::new().unwrap();
+	let blog = temp.path().join("blog");
+	init_blog(&blog);
+
+	add_ok(
+		&blog,
+		&[
+			"Tagged",
+			"--slug",
+			"tagged",
+			"--date",
+			"2024-01-01",
+			"--tag",
+			"Rust",
+			"--tag",
+			"Web Dev",
+			"--tag",
+			"CLI",
+		],
+	);
+	let page_md = read(blog.join("tagged/page.md"));
+
+	bd_in(&blog)
+		.args(["rm", "--tag", "Rust", "tagged"])
+		.assert()
+		.success()
+		.stdout(predicate::str::contains("Removed 1 tag"));
+
+	assert_eq!(tags_of(&blog, "tagged"), ["CLI", "Web Dev"]);
+	assert_eq!(read(blog.join("tagged/page.md")), page_md);
+	assert!(blog.join("tagged/page.toml").is_file());
+}
+
+#[test]
+fn rm_tag_removes_all_tags_and_omits_field() {
+	let temp = TempDir::new().unwrap();
+	let blog = temp.path().join("blog");
+	init_blog(&blog);
+
+	add_ok(
+		&blog,
+		&[
+			"Tagged",
+			"--slug",
+			"tagged",
+			"--date",
+			"2024-01-01",
+			"--tag",
+			"Rust",
+			"--tag",
+			"CLI",
+		],
+	);
+
+	bd_in(&blog)
+		.args(["rm", "--tag", "rust", "--tag", "cli", "tagged"])
+		.assert()
+		.success();
+
+	assert!(tags_of(&blog, "tagged").is_empty());
+	assert!(!read(blog.join("tagged/page.toml")).contains("tags ="));
+	assert!(blog.join("tagged/page.md").is_file());
+}
+
+#[test]
+fn rm_tag_requires_matching_tag_and_non_empty() {
+	let temp = TempDir::new().unwrap();
+	let blog = temp.path().join("blog");
+	init_blog(&blog);
+
+	add_ok(
+		&blog,
+		&[
+			"Tagged",
+			"--slug",
+			"tagged",
+			"--date",
+			"2024-01-01",
+			"--tag",
+			"Rust",
+		],
+	);
+
+	bd_in(&blog)
+		.args(["rm", "--tag", "Missing", "tagged"])
+		.assert()
+		.failure()
+		.stderr(predicate::str::contains("none of the requested tags"));
+
+	bd_in(&blog)
+		.args(["rm", "--tag", "  ", "tagged"])
+		.assert()
+		.failure()
+		.stderr(predicate::str::contains("tag cannot be empty"));
+
+	assert!(blog.join("tagged/page.toml").is_file());
+}
+
+#[test]
+fn rm_tag_does_not_require_force() {
+	let temp = TempDir::new().unwrap();
+	let blog = temp.path().join("blog");
+	init_blog(&blog);
+
+	add_ok(
+		&blog,
+		&[
+			"Tagged",
+			"--slug",
+			"tagged",
+			"--date",
+			"2024-01-01",
+			"--tag",
+			"Rust",
+		],
+	);
+
+	bd_in(&blog)
+		.args(["rm", "--tag", "Rust", "tagged"])
+		.write_stdin("")
+		.assert()
+		.success();
+
+	assert!(blog.join("tagged/page.toml").is_file());
+}
+
+#[test]
+fn rm_tag_can_remove_invalid_existing_tag() {
+	let temp = TempDir::new().unwrap();
+	let blog = temp.path().join("blog");
+	init_blog(&blog);
+	add_ok(
+		&blog,
+		&["Reserved", "--slug", "reserved", "--date", "2024-01-01"],
+	);
+
+	let meta_path = blog.join("reserved/page.toml");
+	let mut meta = read(&meta_path);
+	meta.push_str("tags = [\"con\"]\n");
+	write(&meta_path, meta);
+
+	bd_in(&blog)
+		.args(["rm", "--tag", "con", "reserved"])
+		.assert()
+		.success();
+
+	assert!(tags_of(&blog, "reserved").is_empty());
+	bd_in(&blog).arg("build").assert().success();
+}
+
+#[test]
+fn rm_tag_rejects_non_page_directory() {
+	let temp = TempDir::new().unwrap();
+	let blog = temp.path().join("blog");
+	init_blog(&blog);
+	write(blog.join("notes/note.txt"), "hello");
+
+	bd_in(&blog)
+		.args(["rm", "--tag", "Rust", "notes"])
+		.assert()
+		.failure()
+		.stderr(predicate::str::contains("is not a bd page"));
 }
