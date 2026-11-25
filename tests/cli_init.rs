@@ -62,12 +62,22 @@ fn init_creates_blog_structure() {
 	assert_eq!(page["date"].as_str(), Some(expected_date.as_str()));
 	assert!(!read(blog.join("my-page/page.md")).trim().is_empty());
 
-	for name in ["base.html", "index.html", "post.html"] {
+	for name in [
+		"about.html",
+		"base.html",
+		"index.html",
+		"post.html",
+		"tag.html",
+		"tags.html",
+	] {
 		let template = read(blog.join("templates").join(name));
 		assert!(
 			!template.trim().is_empty(),
 			"templates/{name} should not be empty"
 		);
+		assert!(blog.join("about.md").is_file());
+		assert_contains(&read(blog.join("about.md")), "Write about");
+		assert!(!blog.join("templates/about.md").exists());
 	}
 	assert_contains(
 		&read(blog.join("templates/base.html")),
