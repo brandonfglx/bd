@@ -7,16 +7,22 @@ use crate::commands::add::default_page_markdown;
 use crate::config::{BLOG_CONFIG, BlogConfig, BuildConfig};
 use crate::git;
 use crate::page::{PAGE_META, PageFile, format_date, today};
-use crate::render::{BASE_TEMPLATE, INDEX_TEMPLATE, POST_TEMPLATE};
+use crate::render::{
+	ABOUT_TEMPLATE, BASE_TEMPLATE, INDEX_TEMPLATE, POST_TEMPLATE, TAG_TEMPLATE, TAGS_TEMPLATE,
+};
 
 const GITIGNORE: &str = include_str!("../base/.gitignore");
+const ABOUT: &str = include_str!("../base/about.md");
 const PAGES_WORKFLOW: &str = include_str!("../base/pages.yml");
 const README_TEMPLATE: &str = include_str!("../base/README.md");
 const STYLE_CSS: &str = include_str!("../base/style.css");
 const TEMPLATES: &[(&str, &str)] = &[
+	("about.html", ABOUT_TEMPLATE),
 	("base.html", BASE_TEMPLATE),
 	("index.html", INDEX_TEMPLATE),
 	("post.html", POST_TEMPLATE),
+	("tag.html", TAG_TEMPLATE),
+	("tags.html", TAGS_TEMPLATE),
 ];
 const DEFAULT_PAGE: &str = "my-page";
 const BD_REPO: &str = "brandonfglx/bd";
@@ -130,6 +136,12 @@ pub fn run(location: &Path) -> Result<()> {
 			.with_context(|| format!("init: failed to write: {}", readme_path.display()))?;
 	}
 
+	let about_path = location.join("about.md");
+	if !about_path.exists() {
+		fs::write(&about_path, ABOUT)
+			.with_context(|| format!("init: failed to write {}", about_path.display()))?;
+	}
+
 	let page_dir = location.join(DEFAULT_PAGE);
 	fs::create_dir_all(&page_dir)
 		.with_context(|| format!("init: failed to create {}", page_dir.display()))?;
@@ -139,6 +151,7 @@ pub fn run(location: &Path) -> Result<()> {
 		description: "My first post.".to_string(),
 		date: format_date(today())?,
 		draft: false,
+		tags: Vec::new(),
 		content: "page.md".to_string(),
 	};
 	let page_toml = toml::to_string_pretty(&page).context(format!(
@@ -220,6 +233,11 @@ fn write_gitignore(path: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
 	use super::*;
+
+	#[test]
+	fn embedded_about_is_not_empty() {
+		assert!(!ABOUT.trim().is_empty());
+	}
 
 	#[test]
 	fn embedded_workflow_is_not_empty_and_has_placeholders() {

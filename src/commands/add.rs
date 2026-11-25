@@ -56,6 +56,7 @@ pub fn run(title: &str, slug_arg: Option<&str>, date_arg: Option<&str>, draft: b
 		description: String::new(),
 		date: date_str.clone(),
 		draft,
+		tags: Vec::new(),
 		content: "page.md".to_string(),
 	};
 	let meta = toml::to_string_pretty(&page).context("failed to serialize page.toml")?;

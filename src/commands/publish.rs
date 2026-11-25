@@ -63,7 +63,7 @@ fn pathspecs(root: &Path, blog: &BlogConfig, page: Option<&str>) -> Result<Vec<S
 		return Ok(specs);
 	};
 
-	slug::validate(page)?;
+	slug::validate_existing(page)?;
 	let dir = root.join(page);
 	if !dir.is_dir() {
 		bail!("page not found: {page}");

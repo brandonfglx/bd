@@ -8,9 +8,8 @@ pub fn run(port: u16) -> Result<()> {
 	build::print_summary(&outcome);
 
 	let server = PreviewServer::bind(outcome.output, "127.0.0.1", port)?;
-	println!("Serving preview at http://{}", server.addr());
-	println!("Preview is static: re-run `bd preview` after changing pages.");
-	println!("Press Ctrl+C to stop.");
+	println!("\nPreviewing static build at http://{}", server.addr());
+	println!("Press Ctrl+C to stop.\n");
 
 	server.run()
 }

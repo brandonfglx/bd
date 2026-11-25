@@ -7,8 +7,9 @@ use walkdir::WalkDir;
 
 use crate::config::BlogConfig;
 use crate::markdown;
-use crate::page::{Page, load_pages};
-use crate::render::{PostView, Renderer};
+use crate::page::{self, Page, load_pages};
+use crate::render::{Nav, PostView, Renderer, TagView};
+use crate::tags::{self, Tag};
 
 const OUTPUT_MARKER: &str = ".bd-output";
 const STAGING_PREFIX: &str = ".bd-build-";
@@ -27,6 +28,19 @@ pub struct BuildOutcome {
 	pub output: PathBuf,
 	pub pages: usize,
 	pub skipped: usize,
+}
+
+struct BuildOutput<'a> {
+	posts: Vec<(&'a Page, String)>,
+	index: String,
+	search: String,
+	tags: Option<TagOutput<'a>>,
+	about: Option<String>,
+}
+
+struct TagOutput<'a> {
+	index: String,
+	pages: Vec<(&'a Tag, String)>,
 }
 
 pub fn run(
@@ -67,24 +81,88 @@ pub fn build(args: &BuildArgs) -> Result<BuildOutcome> {
 		.collect();
 	let skipped = total - pages.len();
 
-	let renderer = Renderer::with_root(&root)?;
-	let mut rendered = Vec::with_capacity(pages.len());
+	let today = page::today();
+	let all_page_refs: Vec<&Page> = pages.iter().collect();
+	let listed_pages: Vec<&Page> = pages.iter().filter(|page| !page.is_future(today)).collect();
 
+	let renderer = Renderer::with_root(&root)?;
+
+	let listed_views: Vec<PostView<'_>> = listed_pages
+		.iter()
+		.map(|page| PostView::from(*page))
+		.collect();
+	let all_tags = tags::unique(&all_page_refs)?;
+	let listed_tags = tags::summarize(&listed_pages)?;
+	let listed_tag_views: Vec<TagView<'_>> = listed_tags.iter().map(TagView::from).collect();
+	let about_content = read_about(&root)?;
+	let nav = Nav {
+		has_tags: !all_tags.is_empty(),
+		has_about: about_content.is_some(),
+	};
+
+	// Render each post with the real navigation state.
+	let mut rendered = Vec::with_capacity(pages.len());
 	for page in &pages {
 		let md_text = fs::read_to_string(&page.content_path)
 			.with_context(|| format!("failed to read {}", page.content_path.display()))?;
 		let content = markdown::render(&md_text);
 		let view = PostView::from(page);
 		let html = renderer
-			.post(&blog, &view, &content)
+			.post(&blog, &view, &content, nav)
 			.with_context(|| format!("failed to render page {}", page.slug))?;
 		rendered.push((page, html));
 	}
 
-	let views: Vec<PostView<'_>> = pages.iter().map(PostView::from).collect();
 	let index = renderer
-		.index(&blog, &views)
+		.index(&blog, &listed_views, nav)
 		.context("failed to render index")?;
+	let search = renderer
+		.search(&listed_views)
+		.context("failed to render search index")?;
+
+	let tags = if all_tags.is_empty() {
+		None
+	} else {
+		let index = renderer
+			.tags(&blog, &listed_tag_views, nav)
+			.context("failed to render tags page")?;
+		let mut tag_pages = Vec::with_capacity(all_tags.len());
+
+		for tag in &all_tags {
+			let posts: Vec<PostView<'_>> = listed_pages
+				.iter()
+				.copied()
+				.filter(|page| page.tags.iter().any(|page_tag| page_tag.slug == tag.slug))
+				.map(PostView::from)
+				.collect();
+			let view = TagView {
+				name: &tag.name,
+				slug: &tag.slug,
+				count: listed_tags
+					.iter()
+					.find(|summary| summary.slug == tag.slug)
+					.map_or(0, |summary| summary.count),
+			};
+			let html = renderer
+				.tag(&blog, &view, &posts, nav)
+				.with_context(|| format!("failed to render tag {}", tag.slug))?;
+			tag_pages.push((tag, html));
+		}
+
+		Some(TagOutput {
+			index,
+			pages: tag_pages,
+		})
+	};
+
+	let about = match &about_content {
+		Some(content) => Some(
+			renderer
+				.about(&blog, content, nav)
+				.context("failed to render about page")?,
+		),
+		None => None,
+	};
 
 	let parent = output
 		.parent()
@@ -92,14 +170,16 @@ pub fn build(args: &BuildArgs) -> Result<BuildOutcome> {
 	fs::create_dir_all(parent).with_context(|| format!("failed to create {}", parent.display()))?;
 
 	let staging = Staging::create(parent)?;
-	write_build(
-		&root,
-		staging.path(),
-		&rendered,
-		&index,
-		&page_slugs,
-		args.verbose,
-	)?;
+	let artifacts = BuildOutput {
+		posts: rendered,
+		index,
+		search,
+		tags,
+		about,
+	};
+
+	write_build(&root, staging.path(), &artifacts, &page_slugs, args.verbose)?;
+
 	staging.commit(&output, args.force)?;
 
 	Ok(BuildOutcome {
@@ -107,6 +187,29 @@ pub fn build(args: &BuildArgs) -> Result<BuildOutcome> {
 		pages: pages.len(),
 		skipped,
 	})
+}
+
+fn read_about(root: &Path) -> Result<Option<String>> {
+	let path = root.join("about.md");
+	let metadata = match fs::symlink_metadata(&path) {
+		Ok(metadata) => metadata,
+		Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+		Err(error) => {
+			return Err(error).with_context(|| format!("failed to inspect {}", path.display()));
+		}
+	};
+
+	if metadata.file_type().is_symlink() {
+		bail!("cannot use symlink as about page: {}", path.display());
+	}
+
+	if !metadata.is_file() {
+		bail!("about page is not a file: {}", path.display());
+	}
+
+	let text =
+		fs::read_to_string(&path).with_context(|| format!("failed to read {}", path.display()))?;
+	Ok(Some(markdown::render(&text)))
 }
 
 pub fn print_summary(outcome: &BuildOutcome) {
@@ -350,8 +453,7 @@ fn unique_path(parent: &Path, prefix: &str) -> Result<PathBuf> {
 fn write_build(
 	root: &Path,
 	output: &Path,
-	rendered: &[(&Page, String)],
-	index: &str,
+	build: &BuildOutput<'_>,
 	page_slugs: &[String],
 	verbose: bool,
 ) -> Result<()> {
@@ -362,9 +464,16 @@ fn write_build(
 	let nojekyll = output.join(".nojekyll");
 	fs::write(&nojekyll, "").with_context(|| format!("failed to create {}", nojekyll.display()))?;
 
-	copy_static(root, output, page_slugs, verbose)?;
+	copy_static(
+		root,
+		output,
+		page_slugs,
+		build.tags.is_some(),
+		build.about.is_some(),
+		verbose,
+	)?;
 
-	for (page, html) in rendered {
+	for (page, html) in &build.posts {
 		let page_output = output.join(&page.slug);
 		fs::create_dir_all(&page_output)
 			.with_context(|| format!("failed to create {}", page_output.display()))?;
@@ -383,14 +492,41 @@ fn write_build(
 		}
 	}
 
-	let index_path = output.join("index.html");
-	fs::write(&index_path, index.as_bytes())
-		.with_context(|| format!("failed to write {}", index_path.display()))?;
+	write_output(&output.join("index.html"), &build.index)?;
+	write_output(&output.join("search.json"), &build.search)?;
+
+	if let Some(tags) = &build.tags {
+		let tags_dir = output.join("tags");
+		write_output(&tags_dir.join("index.html"), &tags.index)?;
+		for (tag, html) in &tags.pages {
+			write_output(&tags_dir.join(&tag.slug).join("index.html"), html)?;
+		}
+	}
+
+	if let Some(about) = &build.about {
+		write_output(&output.join("about/index.html"), about)?;
+	}
 
 	Ok(())
 }
 
-fn copy_static(root: &Path, output: &Path, page_slugs: &[String], verbose: bool) -> Result<usize> {
+fn write_output(path: &Path, contents: &str) -> Result<()> {
+	if let Some(parent) = path.parent() {
+		fs::create_dir_all(parent)
+			.with_context(|| format!("failed to create {}", parent.display()))?;
+	}
+	fs::write(path, contents.as_bytes())
+		.with_context(|| format!("failed to write {}", path.display()))
+}
+
+fn copy_static(
+	root: &Path,
+	output: &Path,
+	page_slugs: &[String],
+	has_tags: bool,
+	has_about: bool,
+	verbose: bool,
+) -> Result<usize> {
 	let static_dir = root.join("static");
 	let metadata = match fs::symlink_metadata(&static_dir) {
 		Ok(metadata) => metadata,
@@ -444,7 +580,7 @@ fn copy_static(root: &Path, output: &Path, page_slugs: &[String], verbose: bool)
 			continue;
 		}
 
-		validate_static_path(rel, page_slugs)?;
+		validate_static_path(rel, page_slugs, has_tags, has_about)?;
 
 		let dest = output.join(rel);
 		if let Some(parent) = dest.parent() {
@@ -465,15 +601,38 @@ fn copy_static(root: &Path, output: &Path, page_slugs: &[String], verbose: bool)
 	Ok(copied)
 }
 
-fn validate_static_path(rel: &Path, page_slugs: &[String]) -> Result<()> {
+fn validate_static_path(
+	rel: &Path,
+	page_slugs: &[String],
+	has_tags: bool,
+	has_about: bool,
+) -> Result<()> {
 	let Some(Component::Normal(first)) = rel.components().next() else {
 		bail!("static path must be relative: {}", rel.display());
 	};
 
 	let first = first.to_string_lossy();
-	if first == "index.html" || first == ".nojekyll" || first == OUTPUT_MARKER {
+	if first == "index.html"
+		|| first == ".nojekyll"
+		|| first == OUTPUT_MARKER
+		|| first == "search.json"
+	{
 		bail!(
 			"static path {} conflicts with a generated file",
+			rel.display()
+		);
+	}
+
+	if has_tags && first == "tags" {
+		bail!(
+			"static path {} conflicts with generated tags directory",
+			rel.display()
+		);
+	}
+
+	if has_about && first == "about" {
+		bail!(
+			"static path {} conflicts with generated about directory",
 			rel.display()
 		);
 	}
@@ -568,6 +727,7 @@ mod tests {
 			date_str: "2024-01-02".to_string(),
 			date_display: "January 2, 2024".to_string(),
 			draft: false,
+			tags: Vec::new(),
 			content_rel: PathBuf::from("page.md"),
 			content_path: dir.join("page.md"),
 			dir,
@@ -762,7 +922,7 @@ mod tests {
 
 		let out = root.join("out");
 		fs::create_dir(&out).unwrap();
-		let copied = copy_static(root, &out, &[], false).unwrap();
+		let copied = copy_static(root, &out, &[], false, false, false).unwrap();
 
 		assert_eq!(copied, 2);
 		assert_eq!(
@@ -776,7 +936,7 @@ mod tests {
 
 	#[test]
 	fn copy_static_rejects_generated_file_conflicts() {
-		for rel in ["index.html", ".nojekyll", OUTPUT_MARKER] {
+		for rel in ["index.html", ".nojekyll", OUTPUT_MARKER, "search.json"] {
 			let temp = tempfile::tempdir().unwrap();
 			let root = temp.path();
 			let static_dir = root.join("static");
@@ -785,7 +945,9 @@ mod tests {
 
 			let out = root.join("out");
 			fs::create_dir(&out).unwrap();
-			let error = copy_static(root, &out, &[], false).unwrap_err().to_string();
+			let error = copy_static(root, &out, &[], false, false, false)
+				.unwrap_err()
+				.to_string();
 
 			assert!(error.contains("conflicts with a generated file"), "{error}");
 		}
@@ -801,11 +963,33 @@ mod tests {
 
 		let out = root.join("out");
 		fs::create_dir(&out).unwrap();
-		let error = copy_static(root, &out, &["post".to_string()], false)
+		let error = copy_static(root, &out, &["post".to_string()], false, false, false)
 			.unwrap_err()
 			.to_string();
 
 		assert!(error.contains("conflicts with page directory"), "{error}");
+	}
+
+	#[test]
+	fn copy_static_rejects_generated_directory_conflicts() {
+		for (has_tags, has_about, rel, expected) in [
+			(true, false, "tags/file.txt", "generated tags directory"),
+			(false, true, "about/file.txt", "generated about directory"),
+		] {
+			let temp = tempfile::tempdir().unwrap();
+			let root = temp.path();
+			let static_dir = root.join("static");
+			fs::create_dir_all(static_dir.join(rel).parent().unwrap()).unwrap();
+			fs::write(static_dir.join(rel), "x").unwrap();
+
+			let out = root.join("out");
+			fs::create_dir(&out).unwrap();
+			let error = copy_static(root, &out, &[], has_tags, has_about, false)
+				.unwrap_err()
+				.to_string();
+
+			assert!(error.contains(expected), "{error}");
+		}
 	}
 
 	#[test]
@@ -815,7 +999,10 @@ mod tests {
 		let out = root.join("out");
 		fs::create_dir(&out).unwrap();
 
-		assert_eq!(copy_static(root, &out, &[], false).unwrap(), 0);
+		assert_eq!(
+			copy_static(root, &out, &[], false, false, false).unwrap(),
+			0
+		);
 	}
 
 	#[test]
@@ -826,7 +1013,9 @@ mod tests {
 
 		let out = root.join("out");
 		fs::create_dir(&out).unwrap();
-		let error = copy_static(root, &out, &[], false).unwrap_err().to_string();
+		let error = copy_static(root, &out, &[], false, false, false)
+			.unwrap_err()
+			.to_string();
 
 		assert!(error.contains("not a directory"), "{error}");
 	}
@@ -846,7 +1035,7 @@ mod tests {
 
 		let out = root.join("out");
 		fs::create_dir(&out).unwrap();
-		let copied = copy_static(root, &out, &[], false).unwrap();
+		let copied = copy_static(root, &out, &[], false, false, false).unwrap();
 
 		assert_eq!(copied, 0);
 		assert!(!out.join("link.txt").exists());

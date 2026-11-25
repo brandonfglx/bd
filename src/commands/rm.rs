@@ -11,7 +11,7 @@ pub fn run(slug: &str, force: bool) -> Result<()> {
 	let cwd = std::env::current_dir().context("failed to determine current directory")?;
 	let root = BlogConfig::find_root(&cwd)?;
 
-	slug::validate(slug)?;
+	slug::validate_existing(slug)?;
 
 	let dir = root.join(slug);
 	if !dir.is_dir() {
