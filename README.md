@@ -7,19 +7,19 @@
 </div>
 
 > [!NOTE]
-> bd is currently in alpha. Some features may not be complete! Check out the change log [here.](./CHANGELOG.md)
+> bd is currently in beta. Some features may not be complete! Check out the change log [here.](./CHANGELOG.md)
 
 ## Quick Start
 1. Download the latest release builds [here.](https://github.com/brandonfglx/bd/releases/latest)
 2. Extract the binary from the downloaded file
-3. (macOS only) Open the terminal and remove the app quarantine: `xattr -d com.apple.quarantine bd` (Check [Troubleshooting](https://github.com/brandonfglx/bd/glob/main/README.md#troubleshooting) to learn more)
+3. (macOS only) Open the terminal and remove the app quarantine: `xattr -d com.apple.quarantine bd` (Check [Troubleshooting](https://github.com/brandonfglx/bd/blob/main/README.md#Troubleshooting) to learn more)
 4. Launch bd using the terminal: `./bd --help` (Unix)
 5. Create a new `bd` project using `./bd init`
 6. Now you can create new pages using `./bd add [name]`, build with `./bd build`, and preview with `./bd preview`
 7. To publish, you must have [git](http://git-scm.org/) installed. You can download it from your package manager or [the official website](http://git-scm.org/install). Then call `./bd publish` - `bd` may ask you to input the remote repository's URL which should be in HTTP or SSH.
 
 ## Features
- - init: initializes a new bd directory and scaffolds `templates/` and `static/`
+ - init: initializes a new bd directory and scaffolds `templates/` and `static/`; use `--force` to reset generated defaults and `--upgrade` to refresh only `templates/` and `static/`
  - add: creates a new page using the local date and prints the UTC offset
  - rm: removes a page with the given name
  - build: generates a static build, copying `static/` and applying `templates/` overrides
@@ -59,9 +59,9 @@ The output directory contains a `.bd-output` marker. `bd` only replaces a direct
 	- Since `bd` does not have a self-updater, you must install the latest release from GitHub if it's available. You may need to follow the migration guides below to transfer data.
 
 ## Migration
-Older versions of `bd` relies on older files that may have been changed in a later release. As a result, the `build/` artifacts may be outdated and requires a newer version of `bd` to remedy. Before you upgrade, make sure you create a backup of your projects. To resolve this, install the latest version of `bd` [here]() and add it to your PATH if neccessary. Then inside all your projects that need migrating, save all of your page file directories and then use `bd init` to create a new GitHub repository. Once completed, migrate all of your previous pages over to the new repository. Make sure to add your remote again since this is a new repository.
+Older versions of `bd` relies on older files that may have been changed in a later release. As a result, the `build/` artifacts may be outdated and requires a newer version of `bd` to remedy. Before you upgrade, make sure you create a backup of your projects. To resolve this, install the latest version of `bd` [here](https://github.com/brandonfglx/bd/releases/latest) and add it to your PATH if neccessary. Then use `bd init --upgrade` to refresh the `templates/` and `static/` directories. Rebuild your `bd` project and use `bd preview` to see the changes.
 
-NOTE: Migrating will lose any commit information from previous builds. To publish, you must force an update to the remote repository. Currently, there is no in-place migration support.
+To force reset all generated files, use `bd init --reset`. Be careful: `--force` will reset `templates/`, `static/`, `README.md`, etc., however it will not delete any user created files or directories.
 
 ## License
 bd is licensed under the [GNU General Public License Version 3](./LICENSE).
