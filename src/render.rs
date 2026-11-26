@@ -333,16 +333,16 @@ mod tests {
 
 		assert!(html.starts_with("<!DOCTYPE html>"));
 		assert!(html.contains("<html lang=\"en\">"));
-		assert!(html.contains("<title>My Blog</title>"));
-		assert!(html.contains("<meta name=\"description\" content=\"A description\">"));
-		assert!(html.contains("<a class=\"site-title\" href=\"./\">My Blog</a>"));
+		assert!(html.contains("<title>Default Blog</title>"));
+		assert!(html.contains("<meta name=\"description\" content=\"Auto-generated blog by bd\">"));
+		assert!(html.contains("<a class=\"site-title\" href=\"./\">Default Blog</a>"));
 		assert!(html.contains("<link rel=\"stylesheet\" href=\"./style.css\">"));
 		assert!(html.contains("<a href=\"newer/\">Newer</a>"));
 		assert!(html.contains("<a href=\"older/\">Older</a>"));
 		assert!(html.contains("<time datetime=\"2024-02-01\">February 1, 2024</time>"));
 		assert!(html.contains("Fresh"));
 		assert!(html.contains("&copy;"));
-		assert!(html.contains("Ada"));
+		assert!(html.contains("User"));
 	}
 
 	#[test]
@@ -396,7 +396,7 @@ mod tests {
 			.post(&default_blog(), &post, "<p>Body</p>", Nav::default())
 			.unwrap();
 
-		assert!(html.contains("<title>Hello - My Blog</title>"));
+		assert!(html.contains("<title>Hello - Default Blog</title>"));
 		assert!(html.contains("<h1>Hello</h1>"));
 		assert!(html.contains("<meta name=\"description\" content=\"About hello\">"));
 		assert!(html.contains("<strong>Draft</strong>"));
@@ -469,7 +469,7 @@ mod tests {
 			.post(&default_blog(), &post, "", Nav::default())
 			.unwrap();
 
-		assert!(html.contains("<title>A &amp; B - My Blog</title>"));
+		assert!(html.contains("<title>A &amp; B - Default Blog</title>"));
 		assert!(html.contains("<h1>A &amp; B</h1>"));
 		assert!(html.contains("content=\"&lt;tag&gt;\""));
 		assert!(!html.contains("<tag>"));
@@ -492,7 +492,7 @@ mod tests {
 			.index(&default_blog(), &[], Nav::default())
 			.unwrap();
 
-		assert_eq!(html, "PARTIAL:My Blog:./style.css");
+		assert_eq!(html, "PARTIAL:Default Blog:./style.css");
 	}
 
 	#[test]
@@ -581,7 +581,7 @@ mod tests {
 
 		let html = renderer.index(&config, &[], Nav::default()).unwrap();
 
-		assert!(html.contains("&lt;Github&gt;"));
-		assert!(html.contains("https://example.com/?a=1&amp;b=2"));
+		assert!(html.contains("&lt;GitHub&gt;"));
+		assert!(html.contains("https://example.com/?a=1&b=2"));
 	}
 }

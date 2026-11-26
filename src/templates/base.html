@@ -34,7 +34,7 @@
 		{% if blog.footer %}
 		<nav class="footer-links" aria-label="Footer links">
 			{% for link in blog.footer %}
-			<a href="{{ link.url }}">{{ link.title }}</a>
+			<a href="{{ link.url|safe }}">{{ link.title }}</a>
 			{% endfor %}
 		</nav>
 		{% endif %}
