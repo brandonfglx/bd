@@ -1,10 +1,87 @@
+use std::io::Write;
+
 use std::ffi::{OsStr, OsString};
 use std::path::Path;
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 
 use anyhow::{Context, Result, bail};
 
 const GIT_HELP: &str = "git may not be installed; see https://github.com/brandonfglx/bd/blob/main/README.md#troubleshooting";
+
+pub fn add_all_except<F>(root: &Path, exclude: F) -> Result<()>
+where
+	F: Fn(&str) -> bool,
+{
+	let output = run_checked(
+		root,
+		&[
+			"ls-files",
+			"-t",
+			"-z",
+			"--cached",
+			"--others",
+			"--exclude-standard",
+			"--",
+			".",
+		],
+	)?;
+
+	let mut paths = Vec::new();
+	for entry in output.stdout.split(|byte| *byte == 0) {
+		if entry.len() < 3 || entry[1] != b' ' {
+			continue;
+		}
+
+		if entry[0] == b'S' {
+			continue;
+		}
+
+		let path = &entry[2..];
+		if exclude(&String::from_utf8_lossy(path)) {
+			continue;
+		}
+
+		paths.extend_from_slice(path);
+		paths.push(0);
+	}
+
+	if paths.is_empty() {
+		return Ok(());
+	}
+
+	add_paths(root, &paths)
+}
+
+fn add_paths(root: &Path, paths: &[u8]) -> Result<()> {
+	let mut child = Command::new("git")
+		.args([
+			"--literal-pathspecs",
+			"add",
+			"-A",
+			"--pathspec-from-file=-",
+			"--pathspec-file-nul",
+		])
+		.current_dir(root)
+		.stdin(Stdio::piped())
+		.stdout(Stdio::piped())
+		.stderr(Stdio::piped())
+		.spawn()
+		.with_context(|| format!("failed to run `git add -A`; {GIT_HELP}"))?;
+
+	let write_result = child.stdin.take().map(|mut stdin| stdin.write_all(paths));
+
+	let output = child
+		.wait_with_output()
+		.context("failed to wait for `git add -A`")?;
+
+	ensure_success(output, "git add -A")?;
+
+	if let Some(Err(error)) = write_result {
+		return Err(error).context("failed to send paths to `git add -A`");
+	}
+
+	Ok(())
+}
 
 fn display_args<S: AsRef<OsStr>>(args: &[S]) -> String {
 	args.iter()

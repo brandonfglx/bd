@@ -1,4 +1,7 @@
-# Release v0.1.1
+# Release v0.1.3
+Quick hotfix to fix `bd publish` experiencing a git error.
+
+# Release v0.1.2
 What's new:
  - Added `--tag` option to `add` and `rm` to add tags using the CLI instead of modifying the page.toml
  - Added a custom 404 page - replace by having the file `static/404.html`

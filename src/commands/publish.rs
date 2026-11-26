@@ -3,6 +3,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 
+use crate::commands::build::{BACKUP_PREFIX, STAGING_PREFIX};
 use crate::config::BlogConfig;
 use crate::git;
 use crate::page::PAGE_META;
@@ -26,7 +27,12 @@ pub fn run(page: Option<&str>) -> Result<()> {
 		None => "Publish: all pages".to_string(),
 	};
 
-	git::add(&root, &pathspecs)?;
+	if page.is_some() {
+		git::add(&root, &pathspecs)?;
+	} else {
+		let output = output_path(&blog);
+		git::add_all_except(&root, |path| is_excluded(path, &output))?;
+	}
 
 	if git::has_staged_changes(&root, &pathspecs)? {
 		git::commit(&root, &message, &pathspecs)?;
@@ -50,12 +56,12 @@ pub fn run(page: Option<&str>) -> Result<()> {
 fn pathspecs(root: &Path, blog: &BlogConfig, page: Option<&str>) -> Result<Vec<String>> {
 	let Some(page) = page else {
 		let mut specs = vec![".".to_string()];
-		let output = blog.build.output.to_string_lossy().replace('\\', "/");
+		let output = output_path(blog);
 		if !output.is_empty() {
 			specs.push(format!(":(exclude,literal){output}"));
 		}
 
-		for prefix in [".bd-build-", ".bd-old-"] {
+		for prefix in [STAGING_PREFIX, BACKUP_PREFIX] {
 			specs.push(format!(":(exclude,glob){prefix}*"));
 			specs.push(format!(":(exclude,glob)**/{prefix}*"));
 		}
@@ -106,4 +112,28 @@ fn ensure_remote(root: &Path) -> Result<String> {
 	git::add_remote(root, "origin", url)?;
 	println!("Added remote \"origin\" ({url})");
 	Ok("origin".to_string())
+}
+
+fn output_path(blog: &BlogConfig) -> String {
+	blog.build
+		.output
+		.to_string_lossy()
+		.replace('\\', "/")
+		.trim_end_matches('/')
+		.to_string()
+}
+
+fn is_excluded(path: &str, output: &str) -> bool {
+	if !output.is_empty()
+		&& (path == output
+			|| path
+				.strip_prefix(output)
+				.is_some_and(|rest| rest.starts_with('/')))
+	{
+		return true;
+	}
+
+	path.split('/').any(|component| {
+		component.starts_with(STAGING_PREFIX) || component.starts_with(BACKUP_PREFIX)
+	})
 }

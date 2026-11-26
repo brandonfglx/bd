@@ -11,9 +11,9 @@ use crate::page::{self, Page, load_pages};
 use crate::render::{Nav, PostView, Renderer, TagView};
 use crate::tags::{self, Tag};
 
-const OUTPUT_MARKER: &str = ".bd-output";
-const STAGING_PREFIX: &str = ".bd-build-";
-const BACKUP_PREFIX: &str = ".bd-old-";
+pub const OUTPUT_MARKER: &str = ".bd-output";
+pub const STAGING_PREFIX: &str = ".bd-build-";
+pub const BACKUP_PREFIX: &str = ".bd-old-";
 
 #[derive(Debug, Clone, Default)]
 pub struct BuildArgs {
