@@ -18,6 +18,8 @@ pub struct BlogConfig {
 	#[serde(default)]
 	pub favicon: String,
 	#[serde(default)]
+	pub footer: Vec<FooterLink>,
+	#[serde(default)]
 	pub build: BuildConfig,
 }
 
@@ -26,6 +28,13 @@ pub struct BlogConfig {
 pub struct BuildConfig {
 	pub output: PathBuf,
 	pub include_drafts: bool,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct FooterLink {
+	pub title: String,
+	pub url: String,
 }
 
 impl Default for BuildConfig {
@@ -58,6 +67,22 @@ impl BlogConfig {
 				"config: blog language cannot be empty in {}",
 				path.display()
 			);
+		}
+
+		for link in &config.footer {
+			if link.title.trim().is_empty() {
+				bail!(
+					"config: footer link title cannot be empty in {}",
+					path.display()
+				);
+			}
+
+			if link.url.trim().is_empty() {
+				bail!(
+					"config: footer link URL cannot be empty in {}",
+					path.display()
+				);
+			}
 		}
 
 		Ok(config)
@@ -101,6 +126,7 @@ mod tests {
 		assert_eq!(config.description, "");
 		assert_eq!(config.author, "");
 		assert_eq!(config.language, "en");
+		assert!(config.footer.is_empty());
 		assert_eq!(config.build.output, PathBuf::from("build"));
 		assert!(!config.build.include_drafts);
 	}
@@ -151,5 +177,38 @@ mod tests {
 	fn find_root_errors_without_blog_toml() {
 		let temp = tempfile::tempdir().unwrap();
 		assert!(BlogConfig::find_root(temp.path()).is_err());
+	}
+
+	#[test]
+	fn load_reads_footer_links() {
+		let temp = tempfile::tempdir().unwrap();
+		write_config(
+			temp.path(),
+			"title = \"Blog\"\n\n[[footer]]\ntitle = \"GitHub\"\nurl = \"https://github.com/example\"\n\n[[footer]]\ntitle = \"RSS\"\nurl = \"/feed.xml\"\n",
+		);
+
+		let config = BlogConfig::load(temp.path()).unwrap();
+		assert_eq!(config.footer.len(), 2);
+		assert_eq!(config.footer[0].title, "GitHub");
+		assert_eq!(config.footer[0].url, "https://github.com/example");
+		assert_eq!(config.footer[1].title, "RSS");
+		assert_eq!(config.footer[1].url, "/feed.xml");
+	}
+
+	#[test]
+	fn load_rejects_empty_footer_link_fields() {
+		let temp = tempfile::tempdir().unwrap();
+
+		write_config(
+			temp.path(),
+			"title = \"Blog\"\n\n[[footer]]\ntitle = \" \"\nurl = \"https://example.com\"\n",
+		);
+		assert!(BlogConfig::load(temp.path()).is_err());
+
+		write_config(
+			temp.path(),
+			"title = \"Blog\"\n\n[[footer]]\ntitle = \"GitHub\"\nurl = \" \"\n",
+		);
+		assert!(BlogConfig::load(temp.path()).is_err());
 	}
 }

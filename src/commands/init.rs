@@ -87,13 +87,14 @@ pub fn run(location: &Path, force: bool, upgrade: bool) -> Result<()> {
 	Ok(())
 }
 
-fn default_blog() -> BlogConfig {
+pub fn default_blog() -> BlogConfig {
 	BlogConfig {
 		title: "Default Blog".to_string(),
 		description: "Auto-generated blog by bd".to_string(),
 		author: "User".to_string(),
 		language: "en".to_string(),
 		favicon: String::new(),
+		footer: Vec::new(),
 		build: BuildConfig::default(),
 	}
 }

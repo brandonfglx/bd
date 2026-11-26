@@ -301,18 +301,7 @@ fn favicon_url(blog: &BlogConfig, static_root: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::config::BuildConfig;
-
-	fn blog() -> BlogConfig {
-		BlogConfig {
-			title: "My Blog".to_string(),
-			description: "A description".to_string(),
-			author: "Ada".to_string(),
-			language: "en".to_string(),
-			favicon: String::new(),
-			build: BuildConfig::default(),
-		}
-	}
+	use crate::{commands::init::default_blog, config::FooterLink};
 
 	#[test]
 	fn renders_index_with_posts() {
@@ -338,7 +327,9 @@ mod tests {
 			},
 		];
 
-		let html = renderer.index(&blog(), &posts, Nav::default()).unwrap();
+		let html = renderer
+			.index(&default_blog(), &posts, Nav::default())
+			.unwrap();
 
 		assert!(html.starts_with("<!DOCTYPE html>"));
 		assert!(html.contains("<html lang=\"en\">"));
@@ -357,7 +348,9 @@ mod tests {
 	#[test]
 	fn renders_empty_index() {
 		let renderer = Renderer::new().unwrap();
-		let html = renderer.index(&blog(), &[], Nav::default()).unwrap();
+		let html = renderer
+			.index(&default_blog(), &[], Nav::default())
+			.unwrap();
 
 		assert!(html.contains("No posts yet."));
 		assert!(!html.contains("<ul class=\"posts\">"));
@@ -366,7 +359,7 @@ mod tests {
 	#[test]
 	fn escapes_index_values() {
 		let renderer = Renderer::new().unwrap();
-		let mut config = blog();
+		let mut config = default_blog();
 		config.title = "A & B <Blog>".to_string();
 		let posts = [PostView {
 			slug: "xss",
@@ -400,7 +393,7 @@ mod tests {
 		};
 
 		let html = renderer
-			.post(&blog(), &post, "<p>Body</p>", Nav::default())
+			.post(&default_blog(), &post, "<p>Body</p>", Nav::default())
 			.unwrap();
 
 		assert!(html.contains("<title>Hello - My Blog</title>"));
@@ -426,7 +419,9 @@ mod tests {
 			tags: &[],
 		};
 
-		let html = renderer.post(&blog(), &post, "", Nav::default()).unwrap();
+		let html = renderer
+			.post(&default_blog(), &post, "", Nav::default())
+			.unwrap();
 
 		assert!(!html.contains("<strong>draft</strong>"));
 		assert!(!html.contains("<meta name=\"description\""));
@@ -447,7 +442,7 @@ mod tests {
 
 		let html = renderer
 			.post(
-				&blog(),
+				&default_blog(),
 				&post,
 				"<span id=\"raw\">raw</span>",
 				Nav::default(),
@@ -470,7 +465,9 @@ mod tests {
 			tags: &[],
 		};
 
-		let html = renderer.post(&blog(), &post, "", Nav::default()).unwrap();
+		let html = renderer
+			.post(&default_blog(), &post, "", Nav::default())
+			.unwrap();
 
 		assert!(html.contains("<title>A &amp; B - My Blog</title>"));
 		assert!(html.contains("<h1>A &amp; B</h1>"));
@@ -491,7 +488,9 @@ mod tests {
 		.unwrap();
 
 		let renderer = Renderer::with_root(temp.path()).unwrap();
-		let html = renderer.index(&blog(), &[], Nav::default()).unwrap();
+		let html = renderer
+			.index(&default_blog(), &[], Nav::default())
+			.unwrap();
 
 		assert_eq!(html, "PARTIAL:My Blog:./style.css");
 	}
@@ -513,7 +512,9 @@ mod tests {
 			draft: false,
 			tags: &[],
 		};
-		let html = renderer.post(&blog(), &post, "", Nav::default()).unwrap();
+		let html = renderer
+			.post(&default_blog(), &post, "", Nav::default())
+			.unwrap();
 
 		assert!(html.contains("All posts"));
 		assert!(!html.contains("CUSTOM"));
@@ -550,5 +551,37 @@ mod tests {
 		};
 
 		assert!(error.contains("cannot use symlink"), "{error}");
+	}
+
+	#[test]
+	fn renders_footer_links_without_author() {
+		let renderer = Renderer::new().unwrap();
+		let mut config = default_blog();
+		config.author = String::new();
+		config.footer.push(FooterLink {
+			title: "GitHub".to_string(),
+			url: "https://github.com/brandonfglx".to_string(),
+		});
+
+		let html = renderer.index(&config, &[], Nav::default()).unwrap();
+
+		assert!(html.contains("<footer>"));
+		assert!(html.contains("<nav class=\"footer-links\" aria-label=\"Footer links\">"));
+		assert!(html.contains("<a href=\"https://github.com/brandonfglx\">GitHub</a>"));
+	}
+
+	#[test]
+	fn escapes_footer_link_values() {
+		let renderer = Renderer::new().unwrap();
+		let mut config = default_blog();
+		config.footer.push(FooterLink {
+			title: "<GitHub>".to_string(),
+			url: "https://example.com/?a=1&b=2".to_string(),
+		});
+
+		let html = renderer.index(&config, &[], Nav::default()).unwrap();
+
+		assert!(html.contains("&lt;Github&gt;"));
+		assert!(html.contains("https://example.com/?a=1&amp;b=2"));
 	}
 }
