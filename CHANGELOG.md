@@ -1,5 +1,12 @@
 # Release v0.1.1
 What's new:
+ - Added `--tag` option to `add` and `rm` to add tags using the CLI instead of modifying the page.toml
+ - Added a custom 404 page - replace by having the file `static/404.html`
+ - Users can now set the favicon for their blog using the `favicon` attribute in blog.toml (can be a url or a file in `static/`)
+ - Added custom footers - add multiple `[[footer]]` entries each with their own `title` and `url` attributes
+
+# Release v0.1.1
+What's new:
  - Added a tag system - posts can now have tags which can be viewed on its own tag page
  - Added a search system - search using titles, description, or tag; statically generated and processed locally
  - Added a migration system - run `bd init --upgrade [dir]` to upgrade `static/` and `templates/` to the latest default versions and `bd init --force [dir]` to replace all generated files; both commands leave user created files and directories untouched
