@@ -7,13 +7,13 @@
 	<title>{% block title %}{{ blog.title }}{% endblock %}</title>
 	{% block description %}{% if blog.description %}<meta name="description" content="{{ blog.description }}">{% endif %}{% endblock %}
 	{% if tailwind %}
-	<script src="https://cdn.tailwindcss.com?plugins=typography"></script>
+	<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
 	{% else %}
 	<link rel="stylesheet" href="{{ static_root }}style.css">
 	{% endif %}
 	{% if favicon_url %}<link rel="icon" href="{{ favicon_url }}">{% endif %}
 </head>
-<body{% if tailwind %} class="mx-auto max-w-3xl bg-white px-5 pt-8 pb-16 text-neutral-900 dark:bg-neutral-900 dark:text-neutral-100"{% endif %}>
+<body{% if tailwind %} class="mx-auto max-w-2/3 bg-white px-5 pt-8 pb-16 text-neutral-900 dark:bg-neutral-900 dark:text-neutral-100"{% endif %}>
 	<header{% if tailwind %} class="mb-10 border-b-2 border-neutral-400 pb-4"{% endif %}>
 		<div{% if tailwind %} class="flex flex-wrap items-center justify-between gap-4"{% else %} class="site-header"{% endif %}>
 			<a{% if tailwind %} class="text-2xl font-bold tracking-tight no-underline"{% else %} class="site-title"{% endif %} href="{{ home_url|safe }}">{{ blog.title }}</a>

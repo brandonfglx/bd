@@ -594,7 +594,7 @@ mod tests {
 
 		let html = renderer.index(&config, &[], Nav::default()).unwrap();
 
-		assert!(html.contains("https://cdn.tailwindcss.com?plugins=typography"));
+		assert!(html.contains("https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"));
 		assert!(!html.contains("<link rel=\"stylesheet\" href=\"./style.css\">"));
 	}
 }

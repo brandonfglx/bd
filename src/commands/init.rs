@@ -40,7 +40,11 @@ pub fn run(location: &Path, force: bool, upgrade: bool, css: Option<CssFramework
 	}
 
 	if !force {
-		refuse_existing(&location)?;
+		if let Some(css) = css {
+			return write_css_setting(&location, css);
+		} else {
+			refuse_existing(&location)?;
+		}
 	}
 
 	if PAGES_WORKFLOW.trim().is_empty() {
