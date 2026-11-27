@@ -1,3 +1,12 @@
+# Release v0.1.4
+Provides fixes for `bd publish` not being able to upgrade the `.github/workflows/pages.yml` file after upgrading.
+
+What's new:
+ - `bd publish` `.yml` fix
+ - Permit users to use TailwindCSS for templates by setting the `css` attribute in `blog.toml`
+ - `bd publish` now checks if there is a newer release for `bd` and prompts the user to pass flags to proceed (`--force` to skip updating or `--upgrade` to acknowledge upgrade)
+ - More information is shown when publishing & allow user to set custom commit messages
+
 # Release v0.1.3
 Quick hotfix to fix `bd publish` experiencing a git error.
 
