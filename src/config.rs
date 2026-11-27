@@ -5,6 +5,23 @@ use serde::{Deserialize, Serialize};
 
 pub const BLOG_CONFIG: &str = "blog.toml";
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize, clap::ValueEnum)]
+#[serde(rename_all = "lowercase")]
+pub enum CssFramework {
+	#[default]
+	Manual,
+	Tailwind,
+}
+
+impl CssFramework {
+	pub fn as_str(self) -> &'static str {
+		match self {
+			Self::Manual => "manual",
+			Self::Tailwind => "tailwind",
+		}
+	}
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct BlogConfig {
@@ -17,6 +34,8 @@ pub struct BlogConfig {
 	pub language: String,
 	#[serde(default)]
 	pub favicon: String,
+	#[serde(default)]
+	pub css: CssFramework,
 	#[serde(default)]
 	pub footer: Vec<FooterLink>,
 	#[serde(default)]
@@ -104,6 +123,10 @@ impl BlogConfig {
 			start.display()
 		)
 	}
+
+	pub fn uses_tailwind(&self) -> bool {
+		self.css == CssFramework::Tailwind
+	}
 }
 
 #[cfg(test)]
@@ -126,6 +149,8 @@ mod tests {
 		assert_eq!(config.description, "");
 		assert_eq!(config.author, "");
 		assert_eq!(config.language, "en");
+		assert_eq!(config.favicon, "");
+		assert_eq!(config.css, CssFramework::Manual);
 		assert!(config.footer.is_empty());
 		assert_eq!(config.build.output, PathBuf::from("build"));
 		assert!(!config.build.include_drafts);
@@ -210,5 +235,15 @@ mod tests {
 			"title = \"Blog\"\n\n[[footer]]\ntitle = \"GitHub\"\nurl = \" \"\n",
 		);
 		assert!(BlogConfig::load(temp.path()).is_err());
+	}
+
+	#[test]
+	fn load_reads_css_framework() {
+		let temp = tempfile::tempdir().unwrap();
+		write_config(temp.path(), "title = \"Blog\"\ncss = \"tailwind\"\n");
+
+		let config = BlogConfig::load(temp.path()).unwrap();
+		assert_eq!(config.css, CssFramework::Tailwind);
+		assert!(config.uses_tailwind());
 	}
 }

@@ -1,3 +1,5 @@
+use crate::config::CssFramework;
+
 #[derive(Debug, clap::Parser)]
 #[command(name = "bd", version, about = "A small blogging system hosted on git.")]
 pub struct Cli {
@@ -13,6 +15,8 @@ pub enum Command {
 		force: bool,
 		#[arg(long)]
 		upgrade: bool,
+		#[arg(long, value_enum, value_name = "STYLE")]
+		css: Option<CssFramework>,
 	},
 	Add {
 		title: String,
@@ -43,8 +47,14 @@ pub enum Command {
 		force: bool,
 	},
 	Publish {
-		#[arg(long, value_name = "PAGE")]
+		#[arg(long, value_name = "PAGE", conflicts_with = "upgrade")]
 		page: Option<String>,
+		#[arg(short, long, value_name = "MESSAGE")]
+		message: Option<String>,
+		#[arg(long, conflicts_with = "upgrade")]
+		force: bool,
+		#[arg(long)]
+		upgrade: bool,
 	},
 	Preview {
 		#[arg(long, default_value_t = 10203, value_name = "PORT")]

@@ -162,6 +162,11 @@ pub fn remotes(root: &Path) -> Result<Vec<String>> {
 		.collect())
 }
 
+pub fn remote_url(root: &Path, remote: &str) -> Result<String> {
+	let output = run_checked(root, &["remote", "get-url", remote])?;
+	Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
 pub fn add_remote(root: &Path, name: &str, url: &str) -> Result<()> {
 	run_checked(root, &["remote", "add", name, url])?;
 	Ok(())
@@ -180,6 +185,11 @@ pub fn current_branch(root: &Path) -> Result<String> {
 pub fn has_head(root: &Path) -> Result<bool> {
 	let output = run(root, &["rev-parse", "--verify", "--quiet", "HEAD"])?;
 	Ok(output.status.success())
+}
+
+pub fn head_short(root: &Path) -> Result<String> {
+	let output = run_checked(root, &["rev-parse", "--short", "HEAD"])?;
+	Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
 pub fn add(root: &Path, pathspecs: &[String]) -> Result<()> {
@@ -211,6 +221,43 @@ pub fn has_staged_changes(root: &Path, pathspecs: &[String]) -> Result<bool> {
 			Ok(false)
 		}
 	}
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StagedChange {
+	pub status: String,
+	pub path: String,
+}
+
+pub fn staged_changes(root: &Path, pathspecs: &[String]) -> Result<Vec<StagedChange>> {
+	let mut args = vec![
+		OsString::from("diff"),
+		OsString::from("--cached"),
+		OsString::from("--name-status"),
+		OsString::from("--"),
+	];
+	args.extend(pathspecs.iter().map(|spec| OsString::from(spec.as_str())));
+
+	let output = run_os_checked(root, &args)?;
+	let mut changes = Vec::new();
+	for line in String::from_utf8_lossy(&output.stdout).lines() {
+		let mut parts = line.splitn(3, '\t');
+		let status = parts.next().unwrap_or_default();
+		let first = parts.next().unwrap_or_default();
+		let path = match parts.next() {
+			Some(second) => format!("{first} -> {second}"),
+			None => first.to_string(),
+		};
+
+		if !status.is_empty() && !path.is_empty() {
+			changes.push(StagedChange {
+				status: status.to_string(),
+				path,
+			});
+		}
+	}
+
+	Ok(changes)
 }
 
 pub fn commit(root: &Path, message: &str, pathspecs: &[String]) -> Result<()> {

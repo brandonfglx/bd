@@ -222,6 +222,7 @@ fn site_context(
 		tags_url => Value::from_safe_string(tags_url.unwrap_or("").to_string()),
 		about_url => Value::from_safe_string(about_url.unwrap_or("").to_string()),
 		favicon_url => favicon_url(blog, static_root),
+		tailwind => blog.uses_tailwind(),
 	}
 }
 
@@ -583,5 +584,17 @@ mod tests {
 
 		assert!(html.contains("&lt;GitHub&gt;"));
 		assert!(html.contains("https://example.com/?a=1&b=2"));
+	}
+
+	#[test]
+	fn renders_tailwind_css_when_configured() {
+		let renderer = Renderer::new().unwrap();
+		let mut config = default_blog();
+		config.css = crate::config::CssFramework::Tailwind;
+
+		let html = renderer.index(&config, &[], Nav::default()).unwrap();
+
+		assert!(html.contains("https://cdn.tailwindcss.com?plugins=typography"));
+		assert!(!html.contains("<link rel=\"stylesheet\" href=\"./style.css\">"));
 	}
 }

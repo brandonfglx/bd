@@ -8,6 +8,7 @@ mod render;
 mod server;
 mod slug;
 mod tags;
+mod version;
 
 use std::process::ExitCode;
 
@@ -33,7 +34,8 @@ fn run() -> anyhow::Result<()> {
 			location,
 			force,
 			upgrade,
-		} => commands::init::run(&location, force, upgrade),
+			css,
+		} => commands::init::run(&location, force, upgrade, css),
 		Command::Add {
 			title,
 			slug,
@@ -48,7 +50,12 @@ fn run() -> anyhow::Result<()> {
 			verbose,
 			force,
 		} => commands::build::run(drafts, output.as_deref(), verbose, force),
-		Command::Publish { page } => commands::publish::run(page.as_deref()),
+		Command::Publish {
+			page,
+			message,
+			force,
+			upgrade,
+		} => commands::publish::run(page.as_deref(), message.as_deref(), force, upgrade),
 		Command::Preview { port } => commands::preview::run(port),
 	}
 }

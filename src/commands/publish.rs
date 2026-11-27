@@ -4,14 +4,21 @@ use std::path::Path;
 use anyhow::{Context, Result, bail};
 
 use crate::commands::build::{BACKUP_PREFIX, STAGING_PREFIX};
+use crate::commands::init;
 use crate::config::BlogConfig;
 use crate::git;
 use crate::page::PAGE_META;
 use crate::slug;
+use crate::version;
 
-pub fn run(page: Option<&str>) -> Result<()> {
+pub fn run(page: Option<&str>, message: Option<&str>, force: bool, upgrade: bool) -> Result<()> {
 	let cwd = std::env::current_dir().context("failed to determine current directory")?;
 	let root = BlogConfig::find_root(&cwd)?;
+
+	if upgrade {
+		init::run(&root, false, true, None)?;
+	}
+
 	let blog = BlogConfig::load(&root)?;
 
 	git::check()?;
@@ -22,10 +29,30 @@ pub fn run(page: Option<&str>) -> Result<()> {
 		Some(page) => format!("page \"{page}\""),
 		None => "all pages".to_string(),
 	};
-	let message = match page {
-		Some(page) => format!("Publish: {page}"),
-		None => "Publish: all pages".to_string(),
+	let commit_message = match message {
+		Some(message) if message.trim().is_empty() => {
+			bail!("commit message cannot be empty");
+		}
+		Some(message) => message.to_string(),
+		None => match page {
+			Some(page) => format!("Publish: {page}"),
+			None => "Publish: all pages".to_string(),
+		},
 	};
+
+	if !force && !upgrade {
+		version::ensure_current()?;
+	}
+
+	let remote = ensure_remote(&root)?;
+	let remote_url = git::remote_url(&root, &remote)?;
+	let branch = git::current_branch(&root)?;
+	let set_upstream = !git::has_upstream(&root)?;
+
+	println!("bd publish configuration:");
+	println!("\tRepository: {}", root.display());
+	println!("\tRemote: {remote} ({})", remote_url);
+	println!("\tBranch: {branch}");
 
 	if page.is_some() {
 		git::add(&root, &pathspecs)?;
@@ -35,19 +62,28 @@ pub fn run(page: Option<&str>) -> Result<()> {
 	}
 
 	if git::has_staged_changes(&root, &pathspecs)? {
-		git::commit(&root, &message, &pathspecs)?;
-		println!("Committed {label}.");
+		let changes = git::staged_changes(&root, &pathspecs)?;
+		println!("Commit message: {commit_message}");
+
+		if !changes.is_empty() {
+			println!("Changes:");
+			for change in &changes {
+				println!("\t{} {}", change.status, change.path);
+			}
+		}
+
+		git::commit(&root, &commit_message, &pathspecs)?;
+		let short = git::head_short(&root)?;
+		println!("Committed {label} as {short}.");
 	} else if !git::has_head(&root)? {
 		bail!("nothing to publish: the repository has no commits and no changes");
 	} else {
 		println!("No changes to commit.");
 	}
 
-	let remote = ensure_remote(&root)?;
-	let branch = git::current_branch(&root)?;
-	let set_upstream = !git::has_upstream(&root)?;
 	git::push(&root, &remote, &branch, set_upstream)?;
 
+	println!("Pushed to {remote}/{branch}");
 	println!("Published {label}.");
 
 	Ok(())
@@ -97,7 +133,7 @@ fn ensure_remote(root: &Path) -> Result<String> {
 		);
 	}
 
-	print!("Remote URL (for example git@github.com:user/blog.git): ");
+	print!("Remote URL (e.g. git@github.com:user/blog.git): ");
 	io::stdout().flush().context("failed to flush stdout")?;
 
 	let mut url = String::new();
