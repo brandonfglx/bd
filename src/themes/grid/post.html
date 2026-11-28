@@ -25,7 +25,7 @@
 	{% if post.image %}
 	<img class="mb-8 aspect-video w-full rounded-xl object-cover" src="{{ post.image|asset_url('') }}" alt="">
 	{% endif %}
-	<div class="prose prose-neutral max-w-none dark:prose-invert">
+	<div class="content">
 		{{ content|safe }}
 	</div>
 </article>

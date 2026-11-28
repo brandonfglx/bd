@@ -16,7 +16,7 @@
 		{% if post.description %}<p class="mt-3 text-lg text-neutral-600 dark:text-neutral-300">{{ post.description }}</p>{% endif %}
 	</header>
 	{% if post.image %}<img class="mb-8 aspect-video w-full rounded-xl object-cover" src="{{ post.image|asset_url('') }}" alt="">{% endif %}
-	<div class="prose prose-neutral max-w-none dark:prose-invert">{{ content|safe }}</div>
+	<div class="content">{{ content|safe }}</div>
 </article>
 <p class="mt-8 text-center"><a class="underline" href="../">&larr; All posts</a></p>
 {% else %}
