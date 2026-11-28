@@ -1,0 +1,82 @@
+.hero {
+	padding: 4rem 0 3rem;
+	margin-bottom: 3rem;
+	text-align: center;
+	border-bottom: 1px solid var(--border);
+}
+
+.hero h1 {
+	margin: 0;
+	font-size: clamp(2.5rem, 7vw, 4rem);
+	letter-spacing: -0.04em;
+}
+
+.hero .byline {
+	margin: 0.75rem 0 0;
+	color: var(--muted);
+	font-size: 1.1rem;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+}
+
+.hero .intro {
+	max-width: 42rem;
+	margin: 1rem auto 0;
+	color: var(--secondary);
+	font-size: 1.2rem;
+}
+
+.social-links {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: center;
+	gap: 1rem;
+	margin-top: 1.5rem;
+}
+
+.social-links a {
+	color: var(--secondary);
+	text-decoration: none;
+	border-bottom: 1px solid currentColor;
+}
+
+.section-title {
+	margin: 0 0 1.5rem;
+	font-size: 1.5rem;
+	letter-spacing: 0.02em;
+	text-transform: uppercase;
+}
+
+.latest-posts {
+	display: grid;
+	gap: 1.75rem;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.latest-posts h3 {
+	margin: 0;
+	font-size: 1.4rem;
+}
+
+.latest-posts h3 a {
+	text-decoration: none;
+}
+
+.personal-post {
+	max-width: 48rem;
+	margin: 0 auto;
+}
+
+.personal-post .page-header {
+	text-align: center;
+}
+
+.personal-post .content {
+	margin-top: 2rem;
+}
+
+.back-link {
+	text-align: center;
+}

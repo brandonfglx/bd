@@ -1,0 +1,64 @@
+.post-grid,
+.post-list {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
+	gap: 2rem;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.post-card,
+.post-list > li {
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	background: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: 1rem;
+}
+
+.post-list > li {
+	padding: 1.25rem;
+}
+
+.post-card .cover,
+.post-list .cover {
+	display: block;
+	width: 100%;
+	aspect-ratio: 16 / 9;
+	object-fit: cover;
+}
+
+.post-card .card-body {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	gap: 0.5rem;
+	padding: 1.25rem;
+}
+
+.post-card h2,
+.post-list > li h2 {
+	margin: 0;
+	font-size: 1.25rem;
+}
+
+.post-card .post-tags,
+.post-list > li .post-tags {
+	margin-top: auto;
+}
+
+.post-cover {
+	display: block;
+	width: 100%;
+	max-height: 32rem;
+	margin-bottom: 2rem;
+	object-fit: cover;
+	border-radius: 1rem;
+}
+
+.grid-post {
+	max-width: 56rem;
+	margin: 0 auto;
+}
