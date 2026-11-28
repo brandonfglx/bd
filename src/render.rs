@@ -670,4 +670,34 @@ mod tests {
 			Some("https://example.com/favicon.ico")
 		);
 	}
+
+	#[test]
+	fn tailwind_posts_include_markdown_typography() {
+		let renderer = Renderer::new().unwrap();
+		let mut config = default_blog();
+		config.css = crate::config::CssFramework::Tailwind;
+		let post = PostView {
+			slug: "hello",
+			title: "Hello",
+			description: "",
+			date: "2024-03-04",
+			date_display: "March 4, 2024",
+			draft: false,
+			tags: &[],
+			image: "",
+		};
+
+		let html = renderer
+			.post(
+				&config,
+				&post,
+				"<h1>Heading</h1><h2>Subheading</h2>",
+				Nav::default(),
+			)
+			.unwrap();
+
+		assert!(html.contains(".content h1"));
+		assert!(html.contains("class=\"content\""));
+		assert!(!html.contains("prose prose-neutral"));
+	}
 }

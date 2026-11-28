@@ -1,4 +1,5 @@
 use crate::config::CssFramework;
+use crate::server::PORT;
 use crate::theme::ThemeName;
 
 #[derive(Debug, clap::Parser)]
@@ -60,7 +61,7 @@ pub enum Command {
 		upgrade: bool,
 	},
 	Preview {
-		#[arg(long, default_value_t = 10203, value_name = "PORT")]
+		#[arg(long, default_value_t = PORT, value_name = "PORT")]
 		port: u16,
 	},
 	#[cfg(feature = "gui")]

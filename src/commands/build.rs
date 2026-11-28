@@ -90,7 +90,7 @@ pub fn build_in(root: &Path, args: &BuildArgs) -> Result<BuildOutcome> {
 	let all_page_refs: Vec<&Page> = pages.iter().collect();
 	let listed_pages: Vec<&Page> = pages.iter().filter(|page| !page.is_future(today)).collect();
 
-	let renderer = Renderer::with_root(root)?;
+	let renderer = Renderer::with_blog(root, &blog)?;
 
 	let listed_views: Vec<PostView<'_>> = listed_pages
 		.iter()

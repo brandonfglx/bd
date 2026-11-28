@@ -35,18 +35,10 @@ pub fn run(
 	if !force {
 		if location.join(BLOG_CONFIG).is_file() {
 			if css.is_none() && template.is_none() {
-				refuse_existing(&location)?;
+				return refuse_existing(&location);
 			}
 
-			if let Some(template) = template {
-				write_template_setting(&location, template)?;
-			}
-
-			if let Some(css) = css {
-				write_css_setting(&location, css)?;
-			}
-
-			return Ok(());
+			return upgrade_scaffolding(&location, css, template);
 		}
 
 		refuse_existing(&location)?;

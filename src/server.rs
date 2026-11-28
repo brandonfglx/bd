@@ -9,6 +9,8 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 use tiny_http::{Header, Method, Request, Response, Server, StatusCode};
 
+pub const PORT: u16 = 10203;
+
 pub struct PreviewServer {
 	server: Server,
 	root: PathBuf,
