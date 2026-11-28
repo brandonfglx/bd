@@ -15,13 +15,15 @@ use crate::commands::{build, init, publish};
 use crate::config::{BLOG_CONFIG, BlogConfig, FooterLink};
 use crate::git;
 use crate::page::{PageFile, format_date, today};
-use crate::server::PreviewServer;
+use crate::server::{PORT, PreviewServer};
 use crate::slug;
 use crate::theme::ThemeName;
 
 pub fn run(path: Option<PathBuf>) -> Result<()> {
 	let options = eframe::NativeOptions {
-		viewport: egui::ViewportBuilder::default().with_inner_size([1280.0, 820.0]),
+		viewport: egui::ViewportBuilder::default()
+			.with_inner_size([1280.0, 820.0])
+			.with_maximized(true),
 		..Default::default()
 	};
 
@@ -221,6 +223,37 @@ struct PageEditor {
 	saved_tags: String,
 	saved_markdown: String,
 	cache: CommonMarkCache,
+	scroll: ScrollSync,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ScrollPane {
+	Editor,
+	Preview,
+}
+
+struct ScrollSync {
+	leader: ScrollPane,
+	offset: f32,
+	editor_offset: f32,
+	preview_offset: f32,
+	editor_max: f32,
+	preview_max: f32,
+	initialized: bool,
+}
+
+impl Default for ScrollSync {
+	fn default() -> Self {
+		Self {
+			leader: ScrollPane::Editor,
+			offset: 0.0,
+			editor_offset: 0.0,
+			preview_offset: 0.0,
+			editor_max: 0.0,
+			preview_max: 0.0,
+			initialized: false,
+		}
+	}
 }
 
 impl PageEditor {
@@ -239,6 +272,7 @@ impl PageEditor {
 			saved_tags: tags_text,
 			saved_markdown: markdown,
 			cache: CommonMarkCache::default(),
+			scroll: ScrollSync::default(),
 		})
 	}
 
@@ -306,7 +340,7 @@ impl SettingsState {
 	}
 
 	fn dirty(&self) -> bool {
-		self.config != self.saved || PathBuf::from(self.output.trim()) != self.config.build.output
+		self.config != self.saved || *self.output.trim() != self.config.build.output
 	}
 
 	fn save(&mut self, root: &Path) -> Result<()> {
@@ -589,25 +623,104 @@ impl Project {
 
 			ui.separator();
 			ui.label("Markdown");
-			let available = ui.available_height().max(240.0);
+
+			let footer_height =
+				ui.spacing().interact_size.y + ui.spacing().item_spacing.y * 2.0 + 8.0;
+			let available = (ui.available_height() - footer_height).max(240.0);
 
 			ui.columns(2, |columns| {
-				egui::ScrollArea::vertical()
-					.max_height(available)
-					.show(&mut columns[0], |ui| {
-						ui.add(
-							egui::TextEdit::multiline(&mut editor.markdown)
-								.code_editor()
-								.desired_width(f32::INFINITY)
-								.desired_rows(24),
-						);
+				let pointer = columns[0].ctx().pointer_hover_pos();
+				let scroll_input = columns[0]
+					.input(|input| input.smooth_scroll_delta().y)
+					.abs()
+					> 0.0;
+
+				let editor_hovered = pointer.is_some_and(|pos| columns[0].max_rect().contains(pos));
+				let preview_hovered =
+					pointer.is_some_and(|pos| columns[1].max_rect().contains(pos));
+
+				let editor_target = editor.scroll.offset.min(editor.scroll.editor_max);
+				let force_editor =
+					!editor.scroll.initialized || editor.scroll.leader != ScrollPane::Editor;
+				let editor_output = columns[0]
+					.push_id("markdown_editor", |ui| {
+						let mut area = egui::ScrollArea::vertical()
+							.id_salt("scroll")
+							.max_height(available)
+							.auto_shrink([false, false]);
+						if force_editor {
+							area = area.vertical_scroll_offset(editor_target);
+						}
+						area.show(ui, |ui| {
+							ui.add(
+								egui::TextEdit::multiline(&mut editor.markdown)
+									.code_editor()
+									.desired_width(f32::INFINITY)
+									.desired_rows(24),
+							);
+						})
+					})
+					.inner;
+
+				let editor_offset = editor_output.state.clamped_offset().y;
+				let editor_changed = (editor_offset - editor.scroll.editor_offset).abs() > 0.01;
+				editor.scroll.editor_offset = editor_offset;
+				editor.scroll.editor_max =
+					(editor_output.content_size.y - editor_output.inner_rect.height()).max(0.0);
+				if editor.scroll.leader == ScrollPane::Editor {
+					editor.scroll.offset = editor_offset;
+				}
+
+				let preview_target = editor.scroll.offset.min(editor.scroll.preview_max);
+				let force_preview =
+					!editor.scroll.initialized || editor.scroll.leader != ScrollPane::Preview;
+				let preview_output = columns[1]
+					.push_id("markdown_preview", |ui| {
+						let mut area = egui::ScrollArea::vertical()
+							.id_salt("scroll")
+							.max_height(available)
+							.auto_shrink([false, false]);
+						if force_preview {
+							area = area.vertical_scroll_offset(preview_target);
+						}
+						area.show(ui, |ui| {
+							CommonMarkViewer::new().show(ui, &mut editor.cache, &editor.markdown);
+						})
+					})
+					.inner;
+
+				let preview_offset = preview_output.state.clamped_offset().y;
+				let preview_changed = (preview_offset - editor.scroll.preview_offset).abs() > 0.01;
+				editor.scroll.preview_offset = preview_offset;
+				editor.scroll.preview_max =
+					(preview_output.content_size.y - preview_output.inner_rect.height()).max(0.0);
+
+				let editor_bar_active = columns[0]
+					.ctx()
+					.read_response(editor_output.id.with(1_usize))
+					.is_some_and(|response| {
+						response.is_pointer_button_down_on() || response.dragged()
+					});
+				let preview_bar_active = columns[0]
+					.ctx()
+					.read_response(preview_output.id.with(1_usize))
+					.is_some_and(|response| {
+						response.is_pointer_button_down_on() || response.dragged()
 					});
 
-				egui::ScrollArea::vertical()
-					.max_height(available)
-					.show(&mut columns[1], |ui| {
-						CommonMarkViewer::new().show(ui, &mut editor.cache, &editor.markdown);
-					});
+				if (editor_bar_active || (editor_hovered && scroll_input)) && editor_changed {
+					editor.scroll.leader = ScrollPane::Editor;
+				} else if (preview_bar_active || (preview_hovered && scroll_input))
+					&& preview_changed
+				{
+					editor.scroll.leader = ScrollPane::Preview;
+				}
+
+				editor.scroll.offset = match editor.scroll.leader {
+					ScrollPane::Editor => editor_offset,
+					ScrollPane::Preview => preview_offset,
+				};
+				editor.scroll.initialized = true;
 			});
 
 			ui.separator();
@@ -947,10 +1060,13 @@ impl Project {
 			}
 		};
 
-		let server = match PreviewServer::bind(outcome.output, "127.0.0.1", 0) {
+		let server = match PreviewServer::bind(outcome.output, "127.0.0.1", PORT) {
 			Ok(server) => server,
 			Err(error) => {
 				self.log.push(format!("Preview failed: {error:#}"));
+				self.log.push(format!(
+					"Hint: port {PORT} may already be in use. Stop running other `bd preview` and try again."
+				));
 				return;
 			}
 		};
