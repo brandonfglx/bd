@@ -47,7 +47,7 @@
 	{% for post in posts %}
 	<li class="post-card">
 		{% if post.image %}
-		<a href="{{ post.slug }}/"><img class="cover" src="{{ post.image|asset_url(post.slug ~ '/') }}" alt=""></a>
+		<a href="{{ post.slug }}/"><img class="cover" src="{{ post.image|asset_url(post.slug ~ '/')|safe }}" alt=""></a>
 		{% endif %}
 		<div class="card-body">
 			<h2><a href="{{ post.slug }}/">{{ post.title }}</a></h2>
