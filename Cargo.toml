@@ -7,11 +7,27 @@ license = "GPL-3.0-only"
 repository = "https://www.github.com/brandonfglx/bd"
 readme = "README.md"
 
+[features]
+default = ["gui"]
+gui = ["dep:eframe", "dep:egui_commonmark", "dep:rfd"]
+
 [dependencies]
 anyhow = "1.0.104"
 clap = { version = "4.6.8", features = ["derive"] }
+eframe = { version = "0.37.0", default-features = false, features = [
+	"accesskit",
+	"default_fonts",
+	"glow",
+	"links",
+	"persistence",
+	"system_fonts",
+	"wayland",
+	"x11",
+], optional =true }
+egui_commonmark = { version = "0.26.0", optional = true }
 minijinja = { version = "3.1.0", features = ["json", "serde"] }
 pulldown-cmark = "0.13.6"
+rfd = { version = "0.18.0", optional = true }
 semver = "1.0.28"
 serde = { version = "1.0.229", features = ["derive"] }
 slug = "0.1.6"
