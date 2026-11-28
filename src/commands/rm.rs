@@ -11,7 +11,10 @@ use crate::slug;
 pub fn run(slug: &str, force: bool, tags: &[String]) -> Result<()> {
 	let cwd = std::env::current_dir().context("failed to determine current directory")?;
 	let root = BlogConfig::find_root(&cwd)?;
+	run_in(&root, slug, force, tags)
+}
 
+pub fn run_in(root: &Path, slug: &str, force: bool, tags: &[String]) -> Result<()> {
 	slug::validate_existing(slug)?;
 
 	let dir = root.join(slug);

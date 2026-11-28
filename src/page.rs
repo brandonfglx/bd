@@ -16,7 +16,7 @@ const DATE_FORMAT: &[FormatItem<'static>] = format_description!("[year]-[month]-
 const DATE_DISPLAY_FORMAT: &[FormatItem<'static>] =
 	format_description!("[month repr:long] [day padding:none], [year]");
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct PageFile {
 	pub title: String,
@@ -27,6 +27,8 @@ pub struct PageFile {
 	pub draft: bool,
 	#[serde(default, skip_serializing_if = "Vec::is_empty")]
 	pub tags: Vec<String>,
+	#[serde(default, skip_serializing_if = "String::is_empty")]
+	pub image: String,
 	#[serde(default = "default_content")]
 	pub content: String,
 }
@@ -40,6 +42,7 @@ pub struct Page {
 	pub date_display: String,
 	pub draft: bool,
 	pub tags: Vec<Tag>,
+	pub image: String,
 	pub dir: PathBuf,
 	pub content_rel: PathBuf,
 	pub content_path: PathBuf,
@@ -54,6 +57,64 @@ impl Page {
 // Returns a String of the default content
 fn default_content() -> String {
 	DEFAULT_CONTENT.to_string()
+}
+
+impl PageFile {
+	pub fn load(dir: &Path) -> Result<Self> {
+		let path = dir.join(PAGE_META);
+		let text = fs::read_to_string(&path)
+			.with_context(|| format!("failed to read {}", path.display()))?;
+		let file: Self =
+			toml::from_str(&text).with_context(|| format!("failed to parse {}", path.display()))?;
+		file.validate()
+			.with_context(|| format!("failed to write {}", path.display()))?;
+		Ok(file)
+	}
+
+	pub fn save(&self, dir: &Path) -> Result<()> {
+		self.validate()?;
+		let text = toml::to_string_pretty(self).context("failed to serialize page.toml")?;
+		let path = dir.join(PAGE_META);
+		fs::write(&path, text).with_context(|| format!("failed to write {}", path.display()))?;
+		Ok(())
+	}
+
+	pub fn validate(&self) -> Result<()> {
+		if self.title.trim().is_empty() {
+			bail!("page title cannot be empty");
+		}
+
+		parse_date(&self.date)?;
+
+		let image = self.image.trim();
+		if !image.is_empty() && !is_remote_asset(image) {
+			let image = image.strip_prefix("./").unwrap_or(image);
+			validate_relative_path(image, "image")?;
+		}
+
+		Ok(())
+	}
+}
+
+pub fn is_remote_asset(value: &str) -> bool {
+	value.starts_with('/') || value.contains("://") || value.starts_with("data:")
+}
+
+fn validate_relative_path(value: &str, field: &str) -> Result<PathBuf> {
+	let rel = Path::new(value);
+	if rel.as_os_str().is_empty() {
+		bail!("{field} path cannot be empty");
+	}
+
+	if rel.is_absolute()
+		|| rel
+			.components()
+			.any(|comp| !matches!(comp, Component::Normal(_)))
+	{
+		bail!("{field} path must be a relative path without '.' or '..'");
+	}
+
+	Ok(rel.to_path_buf())
 }
 
 // Attempts to parse the date (as string) to Date
@@ -105,10 +166,7 @@ pub fn format_date_display(date: Date) -> Result<String> {
 // Extract a page from the given directory (page.md with metadata in page.toml)
 pub fn load_page(dir: &Path) -> Result<Page> {
 	let meta_path = dir.join(PAGE_META);
-	let text = fs::read_to_string(&meta_path)
-		.with_context(|| format!("load_page: failed to read {}", meta_path.display()))?;
-	let file: PageFile = toml::from_str(&text)
-		.with_context(|| format!("load_page: failed to parse {}", meta_path.display()))?;
+	let file = PageFile::load(dir)?;
 
 	let title = file.title.trim();
 	if title.is_empty() {
@@ -181,6 +239,36 @@ pub fn load_page(dir: &Path) -> Result<Page> {
 		);
 	}
 
+	let image = file
+		.image
+		.trim()
+		.strip_prefix("./")
+		.unwrap_or(file.image.trim())
+		.to_string();
+
+	if !image.is_empty() && is_remote_asset(&image) {
+		let rel = validate_relative_path(&image, "image")?;
+		let image_path = dir.join(rel);
+		if !image_path.is_file() {
+			bail!(
+				"load_page: image file not found: {} (referenced by {})",
+				image_path.display(),
+				meta_path.display()
+			);
+		}
+
+		let image_canonical = image_path
+			.canonicalize()
+			.with_context(|| format!("load_page: failed to resolve {}", image_path.display()))?;
+		if !image_canonical.starts_with(&dir_canonical) {
+			bail!(
+				"load_page: image file {} is outside of page directory {}",
+				image_path.display(),
+				dir_canonical.display()
+			);
+		}
+	}
+
 	Ok(Page {
 		slug: slug.to_string(),
 		title: title.to_string(),
@@ -190,6 +278,7 @@ pub fn load_page(dir: &Path) -> Result<Page> {
 		date_display,
 		draft: file.draft,
 		tags,
+		image,
 		dir: dir.to_path_buf(),
 		content_rel: rel.to_path_buf(),
 		content_path,
@@ -401,5 +490,42 @@ mod tests {
 			Err(error) => error.to_string(),
 		};
 		assert!(error.contains("content file not found"), "{error}");
+	}
+
+	#[test]
+	fn page_file_save_and_load_round_trip() {
+		let temp = tempfile::tempdir().unwrap();
+		let dir = temp.path().join("post");
+		fs::create_dir(&dir).unwrap();
+		fs::write(dir.join("cover.jpg"), b"image").unwrap();
+		fs::write(dir.join("page.md"), "# Post\n").unwrap();
+
+		let page = PageFile {
+			title: "Post".to_string(),
+			description: String::new(),
+			date: "2024-01-01".to_string(),
+			draft: false,
+			tags: vec!["Rust".to_string()],
+			image: "cover.jpg".to_string(),
+			content: "page.md".to_string(),
+		};
+		page.save(&dir).unwrap();
+
+		let loaded = PageFile::load(&dir).unwrap();
+		assert_eq!(loaded, page);
+	}
+
+	#[test]
+	fn page_file_validate_rejects_bad_image_path() {
+		let page = PageFile {
+			title: "Post".to_string(),
+			description: String::new(),
+			date: "2024-01-01".to_string(),
+			draft: false,
+			tags: Vec::new(),
+			image: "../cover.jpg".to_string(),
+			content: "page.md".to_string(),
+		};
+		assert!(page.validate().is_err());
 	}
 }

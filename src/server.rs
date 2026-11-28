@@ -2,6 +2,9 @@ use std::fs;
 use std::io;
 use std::net::SocketAddr;
 use std::path::{Component, Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use tiny_http::{Header, Method, Request, Response, Server, StatusCode};
@@ -44,8 +47,17 @@ impl PreviewServer {
 	}
 
 	pub fn run(self) -> Result<()> {
-		for request in self.server.incoming_requests() {
-			if let Err(error) = handle(&self.root, request) {
+		self.run_until(Arc::new(AtomicBool::new(false)))
+	}
+
+	pub fn run_until(self, stop: Arc<AtomicBool>) -> Result<()> {
+		while !stop.load(Ordering::Relaxed) {
+			if let Some(request) = self
+				.server
+				.recv_timeout(Duration::from_millis(200))
+				.context("preview server failed")?
+				&& let Err(error) = handle(&self.root, request)
+			{
 				eprintln!("preview: request failed: {error:#}");
 			}
 		}

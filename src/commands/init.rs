@@ -8,43 +8,48 @@ use crate::commands::add::default_page_markdown;
 use crate::config::{BLOG_CONFIG, BlogConfig, BuildConfig, CssFramework};
 use crate::git;
 use crate::page::{PAGE_META, PageFile, format_date, today};
-use crate::render::{
-	ABOUT_TEMPLATE, BASE_TEMPLATE, INDEX_TEMPLATE, NOT_FOUND_TEMPLATE, POST_TEMPLATE, TAG_TEMPLATE,
-	TAGS_TEMPLATE,
-};
+use crate::theme::ThemeName;
 
 const GITIGNORE: &str = include_str!("../base/.gitignore");
 const ABOUT: &str = include_str!("../base/about.md");
 const PAGES_WORKFLOW: &str = include_str!("../base/pages.yml");
 const README_TEMPLATE: &str = include_str!("../base/README.md");
-const STYLE_CSS: &str = include_str!("../base/style.css");
-const TEMPLATES: &[(&str, &str)] = &[
-	("about.html", ABOUT_TEMPLATE),
-	("base.html", BASE_TEMPLATE),
-	("index.html", INDEX_TEMPLATE),
-	("post.html", POST_TEMPLATE),
-	("tag.html", TAG_TEMPLATE),
-	("tags.html", TAGS_TEMPLATE),
-	("404.html", NOT_FOUND_TEMPLATE),
-];
 const DEFAULT_PAGE: &str = "my-page";
 const BD_REPO: &str = "brandonfglx/bd";
 const BD_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-pub fn run(location: &Path, force: bool, upgrade: bool, css: Option<CssFramework>) -> Result<()> {
+pub fn run(
+	location: &Path,
+	force: bool,
+	upgrade: bool,
+	css: Option<CssFramework>,
+	template: Option<ThemeName>,
+) -> Result<()> {
 	let location = std::path::absolute(location)
 		.with_context(|| format!("init: failed to resolve {}", location.display()))?;
 
 	if upgrade {
-		return upgrade_scaffolding(&location, css);
+		return upgrade_scaffolding(&location, css, template);
 	}
 
 	if !force {
-		if let Some(css) = css {
-			return write_css_setting(&location, css);
-		} else {
-			refuse_existing(&location)?;
+		if location.join(BLOG_CONFIG).is_file() {
+			if css.is_none() && template.is_none() {
+				refuse_existing(&location)?;
+			}
+
+			if let Some(template) = template {
+				write_template_setting(&location, template)?;
+			}
+
+			if let Some(css) = css {
+				write_css_setting(&location, css)?;
+			}
+
+			return Ok(());
 		}
+
+		refuse_existing(&location)?;
 	}
 
 	if PAGES_WORKFLOW.trim().is_empty() {
@@ -61,7 +66,9 @@ pub fn run(location: &Path, force: bool, upgrade: bool, css: Option<CssFramework
 	fs::create_dir_all(&location)
 		.with_context(|| format!("init: failed to create {}", location.display()))?;
 
+	let theme = template.unwrap_or_default();
 	let mut blog = default_blog();
+	blog.template = theme;
 	if let Some(css) = css {
 		blog.css = css;
 	}
@@ -69,8 +76,8 @@ pub fn run(location: &Path, force: bool, upgrade: bool, css: Option<CssFramework
 	write_blog_config(&location, &blog)?;
 	write_gitignore(&location.join(".gitignore"))?;
 	write_workflow(&location)?;
-	write_templates(&location)?;
-	write_static(&location)?;
+	write_templates(&location, theme)?;
+	write_static(&location, theme)?;
 	write_readme(&location, &blog, force)?;
 	write_about(&location, force)?;
 	write_default_page(&location)?;
@@ -102,6 +109,7 @@ pub fn default_blog() -> BlogConfig {
 		description: "Auto-generated blog by bd".to_string(),
 		author: "User".to_string(),
 		language: "en".to_string(),
+		template: ThemeName::Classic,
 		css: CssFramework::Manual,
 		favicon: String::new(),
 		footer: Vec::new(),
@@ -182,11 +190,27 @@ fn write_css_setting(location: &Path, css: CssFramework) -> Result<()> {
 	Ok(())
 }
 
-fn write_templates(location: &Path) -> Result<()> {
+fn write_template_setting(location: &Path, template: ThemeName) -> Result<()> {
+	let path = location.join(BLOG_CONFIG);
+	let text = fs::read_to_string(&path)
+		.with_context(|| format!("init: failed to read {}", path.display()))?;
+	let mut document = text
+		.parse::<DocumentMut>()
+		.with_context(|| format!("init: failed to parse {}", path.display()))?;
+	document
+		.as_table_mut()
+		.insert("template", toml_edit::value(template.as_str()));
+
+	fs::write(&path, document.to_string())
+		.with_context(|| format!("init: failed to write {}", path.display()))?;
+	Ok(())
+}
+
+fn write_templates(location: &Path, theme: ThemeName) -> Result<()> {
 	let templates_dir = location.join("templates");
 	fs::create_dir_all(&templates_dir)
 		.with_context(|| format!("init: failed to create {}", templates_dir.display()))?;
-	for (name, contents) in TEMPLATES {
+	for (name, contents) in theme.theme().templates() {
 		let path = templates_dir.join(name);
 		fs::write(&path, contents)
 			.with_context(|| format!("init: failed to write {}", path.display()))?;
@@ -195,13 +219,13 @@ fn write_templates(location: &Path) -> Result<()> {
 	Ok(())
 }
 
-fn write_static(location: &Path) -> Result<()> {
+fn write_static(location: &Path, theme: ThemeName) -> Result<()> {
 	let static_dir = location.join("static");
 	fs::create_dir_all(&static_dir)
 		.with_context(|| format!("init: failed to create {}", static_dir.display()))?;
 
 	let style_path = static_dir.join("style.css");
-	fs::write(&style_path, STYLE_CSS)
+	fs::write(&style_path, theme.theme().style_css)
 		.with_context(|| format!("init: failed to write {}", style_path.display()))?;
 
 	Ok(())
@@ -243,6 +267,7 @@ fn write_default_page(location: &Path) -> Result<()> {
 		date: format_date(today())?,
 		draft: false,
 		tags: Vec::new(),
+		image: String::new(),
 		content: "page.md".to_string(),
 	};
 	let page_toml = toml::to_string_pretty(&page).context(format!(
@@ -266,7 +291,11 @@ fn write_default_page(location: &Path) -> Result<()> {
 	Ok(())
 }
 
-fn upgrade_scaffolding(location: &Path, css: Option<CssFramework>) -> Result<()> {
+fn upgrade_scaffolding(
+	location: &Path,
+	css: Option<CssFramework>,
+	template: Option<ThemeName>,
+) -> Result<()> {
 	if !location.join(BLOG_CONFIG).is_file() {
 		bail!(
 			"init --upgrade: {} does not contain {BLOG_CONFIG}; run `bd init {}` first",
@@ -275,17 +304,40 @@ fn upgrade_scaffolding(location: &Path, css: Option<CssFramework>) -> Result<()>
 		);
 	}
 
-	write_templates(location)?;
-	write_static(location)?;
-	write_workflow(location)?;
+	let config = BlogConfig::load(location)?;
+	let theme = template.unwrap_or(config.template);
+
+	if let Some(template) = template {
+		write_template_setting(location, template)?;
+	}
+
 	if let Some(css) = css {
 		write_css_setting(location, css)?;
 	}
 
+	write_templates(location, theme)?;
+	write_static(location, theme)?;
+	write_workflow(location)?;
+
 	println!(
-		"Upgrade templates/, static/, and .github/workflows/pages.yml in {}",
-		location.display()
+		"Upgrade templates/, static/, and .github/workflows/pages.yml in {} (theme: {})",
+		location.display(),
+		theme.as_str()
 	);
+	Ok(())
+}
+
+pub fn apply_theme(location: &Path, theme: ThemeName) -> Result<()> {
+	if !location.join(BLOG_CONFIG).is_file() {
+		bail!(
+			"apply_theme: {} does not contain {BLOG_CONFIG}",
+			location.display()
+		);
+	}
+
+	write_template_setting(location, theme)?;
+	write_templates(location, theme)?;
+	write_static(location, theme)?;
 	Ok(())
 }
 
@@ -349,14 +401,14 @@ mod tests {
 
 	#[test]
 	fn embedded_templates_are_not_empty() {
-		for (name, contents) in TEMPLATES {
+		for (name, contents) in ThemeName::Classic.theme().templates() {
 			assert!(!contents.trim().is_empty(), "template {name} is empty");
 		}
 	}
 
 	#[test]
 	fn embedded_style_is_not_empty() {
-		assert!(!STYLE_CSS.trim().is_empty());
+		assert!(!ThemeName::Classic.theme().style_css.trim().is_empty());
 	}
 
 	#[test]
@@ -364,7 +416,7 @@ mod tests {
 		let temp = tempfile::tempdir().unwrap();
 		fs::write(temp.path().join(BLOG_CONFIG), "title = \"Existing\"\n").unwrap();
 
-		let error = run(temp.path(), false, false, None)
+		let error = run(temp.path(), false, false, None, None)
 			.unwrap_err()
 			.to_string();
 
@@ -376,7 +428,7 @@ mod tests {
 		let temp = tempfile::tempdir().unwrap();
 		fs::create_dir(temp.path().join("templates")).unwrap();
 
-		let error = run(temp.path(), false, false, None)
+		let error = run(temp.path(), false, false, None, None)
 			.unwrap_err()
 			.to_string();
 
@@ -388,7 +440,7 @@ mod tests {
 		let temp = tempfile::tempdir().unwrap();
 		fs::create_dir(temp.path().join("static")).unwrap();
 
-		let error = run(temp.path(), false, false, None)
+		let error = run(temp.path(), false, false, None, None)
 			.unwrap_err()
 			.to_string();
 
@@ -452,7 +504,9 @@ mod tests {
 	fn run_upgrade_requires_blog_config() {
 		let temp = tempfile::tempdir().unwrap();
 
-		let error = run(temp.path(), false, true, None).unwrap_err().to_string();
+		let error = run(temp.path(), false, true, None, None)
+			.unwrap_err()
+			.to_string();
 
 		assert!(error.contains("does not contain blog.toml"), "{error}");
 	}
@@ -483,7 +537,7 @@ mod tests {
 		fs::create_dir_all(root.join("notes")).unwrap();
 		fs::write(root.join("notes/keep.txt"), "keep").unwrap();
 
-		run(root, true, false, None).unwrap();
+		run(root, true, false, None, None).unwrap();
 
 		let config: BlogConfig =
 			toml::from_str(&fs::read_to_string(root.join(BLOG_CONFIG)).unwrap()).unwrap();
@@ -536,5 +590,18 @@ mod tests {
 		let contents = fs::read_to_string(&path).unwrap();
 		assert!(contents.contains("# Keep this comment!"));
 		assert!(contents.contains("css = \"tailwind\""));
+	}
+
+	#[test]
+	fn write_template_setting_preserves_comments() {
+		let temp = tempfile::tempdir().unwrap();
+		let path = temp.path().join(BLOG_CONFIG);
+		fs::write(&path, "# Keep this comment!\ntitle = \"Blog\"\n").unwrap();
+
+		write_template_setting(temp.path(), ThemeName::Personal).unwrap();
+
+		let contents = fs::read_to_string(&path).unwrap();
+		assert!(contents.contains("# Keep this comment!"));
+		assert!(contents.contains("template = \"personal\""));
 	}
 }

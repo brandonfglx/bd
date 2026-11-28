@@ -1,7 +1,12 @@
-use std::path::{Path, PathBuf};
+use std::{
+	fs,
+	path::{Path, PathBuf},
+};
 
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
+
+use crate::theme::ThemeName;
 
 pub const BLOG_CONFIG: &str = "blog.toml";
 
@@ -22,7 +27,7 @@ impl CssFramework {
 	}
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct BlogConfig {
 	pub title: String,
@@ -35,6 +40,8 @@ pub struct BlogConfig {
 	#[serde(default)]
 	pub favicon: String,
 	#[serde(default)]
+	pub template: ThemeName,
+	#[serde(default)]
 	pub css: CssFramework,
 	#[serde(default)]
 	pub footer: Vec<FooterLink>,
@@ -42,14 +49,14 @@ pub struct BlogConfig {
 	pub build: BuildConfig,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct BuildConfig {
 	pub output: PathBuf,
 	pub include_drafts: bool,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct FooterLink {
 	pub title: String,
@@ -77,34 +84,43 @@ impl BlogConfig {
 		let config: Self = toml::from_str(&text)
 			.with_context(|| format!("config: failed to parse {}", path.display()))?;
 
-		if config.title.trim().is_empty() {
-			bail!("config: blog title cannot be empty in {}", path.display());
+		config
+			.validate()
+			.with_context(|| format!("config: invalid {}", path.display()))?;
+
+		Ok(config)
+	}
+
+	pub fn validate(&self) -> Result<()> {
+		if self.title.trim().is_empty() {
+			bail!("config: blog title cannot be empty");
 		}
 
-		if config.language.trim().is_empty() {
-			bail!(
-				"config: blog language cannot be empty in {}",
-				path.display()
-			);
+		if self.language.trim().is_empty() {
+			bail!("config: blog language cannot be empty");
 		}
 
-		for link in &config.footer {
+		for link in &self.footer {
 			if link.title.trim().is_empty() {
-				bail!(
-					"config: footer link title cannot be empty in {}",
-					path.display()
-				);
+				bail!("config: footer link title cannot be empty");
 			}
 
 			if link.url.trim().is_empty() {
-				bail!(
-					"config: footer link URL cannot be empty in {}",
-					path.display()
-				);
+				bail!("config: footer link URL cannot be empty");
 			}
 		}
 
-		Ok(config)
+		Ok(())
+	}
+
+	pub fn save(&self, root: &Path) -> Result<()> {
+		self.validate()?;
+
+		let text = toml::to_string_pretty(self).context("failed to serialize blog.toml")?;
+		let path = root.join(BLOG_CONFIG);
+		fs::write(&path, text).with_context(|| format!("failed to write {}", path.display()))?;
+
+		Ok(())
 	}
 
 	pub fn find_root(start: &Path) -> Result<PathBuf> {
@@ -150,6 +166,7 @@ mod tests {
 		assert_eq!(config.author, "");
 		assert_eq!(config.language, "en");
 		assert_eq!(config.favicon, "");
+		assert_eq!(config.template, ThemeName::Classic);
 		assert_eq!(config.css, CssFramework::Manual);
 		assert!(config.footer.is_empty());
 		assert_eq!(config.build.output, PathBuf::from("build"));
@@ -245,5 +262,25 @@ mod tests {
 		let config = BlogConfig::load(temp.path()).unwrap();
 		assert_eq!(config.css, CssFramework::Tailwind);
 		assert!(config.uses_tailwind());
+	}
+
+	#[test]
+	fn save_round_trips_config() {
+		let temp = tempfile::tempdir().unwrap();
+		let config = BlogConfig {
+			title: "Blog".to_string(),
+			description: String::new(),
+			author: String::new(),
+			language: "en".to_string(),
+			favicon: String::new(),
+			template: ThemeName::Grid,
+			css: CssFramework::Manual,
+			footer: Vec::new(),
+			build: BuildConfig::default(),
+		};
+		config.save(temp.path()).unwrap();
+
+		let loaded = BlogConfig::load(temp.path()).unwrap();
+		assert_eq!(loaded, config);
 	}
 }

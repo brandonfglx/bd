@@ -11,15 +11,9 @@ use walkdir::WalkDir;
 use crate::config::BlogConfig;
 use crate::page::Page;
 use crate::tags::{Tag, TagSummary};
+use crate::theme::{Theme, ThemeName};
 
-pub(crate) const BASE_TEMPLATE: &str = include_str!("templates/base.html");
-pub(crate) const ABOUT_TEMPLATE: &str = include_str!("templates/about.html");
-pub(crate) const INDEX_TEMPLATE: &str = include_str!("templates/index.html");
-pub(crate) const POST_TEMPLATE: &str = include_str!("templates/post.html");
-pub(crate) const TAG_TEMPLATE: &str = include_str!("templates/tag.html");
-pub(crate) const TAGS_TEMPLATE: &str = include_str!("templates/tags.html");
-pub(crate) const NOT_FOUND_TEMPLATE: &str = include_str!("templates/404.html");
-const SEARCH_TEMPLATE: &str = include_str!("templates/search.json");
+const SEARCH_TEMPLATE: &str = include_str!("themes/shared/search.json");
 
 pub struct Renderer {
 	env: Environment<'static>,
@@ -34,6 +28,7 @@ pub struct PostView<'a> {
 	pub date_display: &'a str,
 	pub draft: bool,
 	pub tags: &'a [Tag],
+	pub image: &'a str,
 }
 
 impl<'a> From<&'a Page> for PostView<'a> {
@@ -46,6 +41,7 @@ impl<'a> From<&'a Page> for PostView<'a> {
 			date_display: &page.date_display,
 			draft: page.draft,
 			tags: &page.tags,
+			image: &page.image,
 		}
 	}
 }
@@ -75,29 +71,33 @@ impl<'a> From<&'a TagSummary> for TagView<'a> {
 
 impl Renderer {
 	pub fn new() -> Result<Self> {
+		Self::for_theme(ThemeName::Classic.theme())
+	}
+
+	pub fn for_theme(theme: &Theme) -> Result<Self> {
 		let mut env = Environment::new();
-		env.add_template("base.html", BASE_TEMPLATE)
-			.context("failed to load base.html template")?;
-		env.add_template("about.html", ABOUT_TEMPLATE)
-			.context("failed to load about.html template")?;
-		env.add_template("index.html", INDEX_TEMPLATE)
-			.context("failed to load index.html template")?;
-		env.add_template("post.html", POST_TEMPLATE)
-			.context("failed to load post.html template")?;
-		env.add_template("tag.html", TAG_TEMPLATE)
-			.context("failed to load tag.html template")?;
-		env.add_template("tags.html", TAGS_TEMPLATE)
-			.context("failed to load tags.html template")?;
+		for (name, source) in theme.templates() {
+			env.add_template(name, source)
+				.with_context(|| format!("failed to load {name} template"))?;
+		}
+
 		env.add_template("search.json", SEARCH_TEMPLATE)
 			.context("failed to load search.json template")?;
-		env.add_template("404.html", NOT_FOUND_TEMPLATE)
-			.context("failed to load 404.html template")?;
+		env.add_filter("asset_url", asset_url);
 
 		Ok(Self { env })
 	}
 
 	pub fn with_root(root: &Path) -> Result<Self> {
-		let mut renderer = Self::new()?;
+		Self::with_root_and_theme(root, ThemeName::Classic)
+	}
+
+	pub fn with_blog(root: &Path, blog: &BlogConfig) -> Result<Self> {
+		Self::with_root_and_theme(root, blog.template)
+	}
+
+	pub fn with_root_and_theme(root: &Path, theme: ThemeName) -> Result<Self> {
+		let mut renderer = Self::for_theme(theme.theme())?;
 		load_custom_templates(&mut renderer.env, root)?;
 		Ok(renderer)
 	}
@@ -299,6 +299,20 @@ fn favicon_url(blog: &BlogConfig, static_root: &str) -> Option<String> {
 	}
 }
 
+fn asset_url(value: String, prefix: String) -> minijinja::Value {
+	let value = value.trim();
+	if value.is_empty() {
+		return minijinja::Value::from_safe_string(String::new());
+	}
+
+	if value.starts_with('/') || value.contains("://") || value.starts_with("data:") {
+		return minijinja::Value::from_safe_string(value.to_string());
+	}
+
+	let value = value.strip_prefix("./").unwrap_or(value).replace('\\', "/");
+	minijinja::Value::from_safe_string(format!("{prefix}{value}"))
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -316,6 +330,7 @@ mod tests {
 				date_display: "February 1, 2024",
 				draft: false,
 				tags: &[],
+				image: "",
 			},
 			PostView {
 				slug: "older",
@@ -325,6 +340,7 @@ mod tests {
 				date_display: "January 1, 2024",
 				draft: false,
 				tags: &[],
+				image: "",
 			},
 		];
 
@@ -370,6 +386,7 @@ mod tests {
 			date_display: "January 1, 2024",
 			draft: false,
 			tags: &[],
+			image: "",
 		}];
 
 		let html = renderer.index(&config, &posts, Nav::default()).unwrap();
@@ -391,6 +408,7 @@ mod tests {
 			date_display: "March 4, 2024",
 			draft: true,
 			tags: &[],
+			image: "",
 		};
 
 		let html = renderer
@@ -418,6 +436,7 @@ mod tests {
 			date_display: "March 4, 2024",
 			draft: false,
 			tags: &[],
+			image: "",
 		};
 
 		let html = renderer
@@ -439,6 +458,7 @@ mod tests {
 			date_display: "January 1, 2024",
 			draft: false,
 			tags: &[],
+			image: "",
 		};
 
 		let html = renderer
@@ -464,6 +484,7 @@ mod tests {
 			date_display: "January 1, 2024",
 			draft: false,
 			tags: &[],
+			image: "",
 		};
 
 		let html = renderer
@@ -512,6 +533,7 @@ mod tests {
 			date_display: "January 1, 2024",
 			draft: false,
 			tags: &[],
+			image: "",
 		};
 		let html = renderer
 			.post(&default_blog(), &post, "", Nav::default())
@@ -596,5 +618,56 @@ mod tests {
 
 		assert!(html.contains("https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"));
 		assert!(!html.contains("<link rel=\"stylesheet\" href=\"./style.css\">"));
+	}
+
+	#[test]
+	fn asset_url_handles_relative_and_absolute_urls() {
+		assert_eq!(
+			asset_url("cover.jpg".into(), "post/".into()),
+			minijinja::Value::from_safe_string("post/cover.jpg".to_string())
+		);
+		assert_eq!(
+			asset_url("cover.jpg".into(), "../../post/".into()),
+			minijinja::Value::from_safe_string("../../post/cover.jpg".to_string())
+		);
+		assert_eq!(
+			asset_url("cover.jpg".into(), String::new()),
+			minijinja::Value::from_safe_string("cover.jpg".to_string())
+		);
+		assert_eq!(
+			asset_url("https://example.com/a.jpg".into(), "post/".into()),
+			minijinja::Value::from_safe_string("https://example.com/a.jpg".to_string())
+		);
+		assert_eq!(
+			asset_url("/a.jpg".into(), "post/".into()),
+			minijinja::Value::from_safe_string("/a.jpg".to_string())
+		);
+	}
+
+	#[test]
+	fn not_found_uses_root_relative_assets() {
+		let html = Renderer::new()
+			.unwrap()
+			.not_found(&default_blog(), Nav::default())
+			.unwrap();
+
+		assert!(html.contains("href=\"/style.css\""));
+		assert!(html.contains("data-index=\"/search.json\""));
+		assert!(html.contains("data-home=\"/\""));
+	}
+
+	#[test]
+	fn favicon_variants() {
+		let mut config = default_blog();
+		assert_eq!(favicon_url(&config, "./"), None);
+
+		config.favicon = "favicon.ico".to_string();
+		assert_eq!(favicon_url(&config, "./").as_deref(), Some("./favicon.ico"));
+
+		config.favicon = "https://example.com/favicon.ico".to_string();
+		assert_eq!(
+			favicon_url(&config, "./").as_deref(),
+			Some("https://example.com/favicon.ico")
+		);
 	}
 }

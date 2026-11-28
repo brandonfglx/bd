@@ -14,17 +14,26 @@ use crate::version;
 pub fn run(page: Option<&str>, message: Option<&str>, force: bool, upgrade: bool) -> Result<()> {
 	let cwd = std::env::current_dir().context("failed to determine current directory")?;
 	let root = BlogConfig::find_root(&cwd)?;
+	run_in(&root, page, message, force, upgrade)
+}
 
+pub fn run_in(
+	root: &Path,
+	page: Option<&str>,
+	message: Option<&str>,
+	force: bool,
+	upgrade: bool,
+) -> Result<()> {
 	if upgrade {
-		init::run(&root, false, true, None)?;
+		init::run(root, false, true, None, None)?;
 	}
 
-	let blog = BlogConfig::load(&root)?;
+	let blog = BlogConfig::load(root)?;
 
 	git::check()?;
-	git::require_repo(&root)?;
+	git::require_repo(root)?;
 
-	let pathspecs = pathspecs(&root, &blog, page)?;
+	let pathspecs = pathspecs(root, &blog, page)?;
 	let label = match page {
 		Some(page) => format!("page \"{page}\""),
 		None => "all pages".to_string(),
@@ -44,10 +53,10 @@ pub fn run(page: Option<&str>, message: Option<&str>, force: bool, upgrade: bool
 		version::ensure_current()?;
 	}
 
-	let remote = ensure_remote(&root)?;
-	let remote_url = git::remote_url(&root, &remote)?;
-	let branch = git::current_branch(&root)?;
-	let set_upstream = !git::has_upstream(&root)?;
+	let remote = ensure_remote(root)?;
+	let remote_url = git::remote_url(root, &remote)?;
+	let branch = git::current_branch(root)?;
+	let set_upstream = !git::has_upstream(root)?;
 
 	println!("bd publish configuration:");
 	println!("\tRepository: {}", root.display());
@@ -55,14 +64,14 @@ pub fn run(page: Option<&str>, message: Option<&str>, force: bool, upgrade: bool
 	println!("\tBranch: {branch}");
 
 	if page.is_some() {
-		git::add(&root, &pathspecs)?;
+		git::add(root, &pathspecs)?;
 	} else {
 		let output = output_path(&blog);
-		git::add_all_except(&root, |path| is_excluded(path, &output))?;
+		git::add_all_except(root, |path| is_excluded(path, &output))?;
 	}
 
-	if git::has_staged_changes(&root, &pathspecs)? {
-		let changes = git::staged_changes(&root, &pathspecs)?;
+	if git::has_staged_changes(root, &pathspecs)? {
+		let changes = git::staged_changes(root, &pathspecs)?;
 		println!("Commit message: {commit_message}");
 
 		if !changes.is_empty() {
@@ -72,16 +81,16 @@ pub fn run(page: Option<&str>, message: Option<&str>, force: bool, upgrade: bool
 			}
 		}
 
-		git::commit(&root, &commit_message, &pathspecs)?;
-		let short = git::head_short(&root)?;
+		git::commit(root, &commit_message, &pathspecs)?;
+		let short = git::head_short(root)?;
 		println!("Committed {label} as {short}.");
-	} else if !git::has_head(&root)? {
+	} else if !git::has_head(root)? {
 		bail!("nothing to publish: the repository has no commits and no changes");
 	} else {
 		println!("No changes to commit.");
 	}
 
-	git::push(&root, &remote, &branch, set_upstream)?;
+	git::push(root, &remote, &branch, set_upstream)?;
 
 	println!("Pushed to {remote}/{branch}");
 	println!("Published {label}.");

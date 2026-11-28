@@ -1,4 +1,5 @@
 use crate::config::CssFramework;
+use crate::theme::ThemeName;
 
 #[derive(Debug, clap::Parser)]
 #[command(name = "bd", version, about = "A small blogging system hosted on git.")]
@@ -17,6 +18,8 @@ pub enum Command {
 		upgrade: bool,
 		#[arg(long, value_enum, value_name = "STYLE")]
 		css: Option<CssFramework>,
+		#[arg(long, value_enum, value_name = "THEME")]
+		template: Option<ThemeName>,
 	},
 	Add {
 		title: String,
@@ -59,5 +62,10 @@ pub enum Command {
 	Preview {
 		#[arg(long, default_value_t = 10203, value_name = "PORT")]
 		port: u16,
+	},
+	#[cfg(feature = "gui")]
+	Gui {
+		#[arg(long, value_name = "DIR")]
+		path: Option<std::path::PathBuf>,
 	},
 }

@@ -28,7 +28,17 @@ pub fn run(
 ) -> Result<()> {
 	let cwd = std::env::current_dir().context("failed to determine current directory")?;
 	let root = BlogConfig::find_root(&cwd)?;
+	run_in(&root, title, slug_arg, date_arg, draft, tags)
+}
 
+pub fn run_in(
+	root: &Path,
+	title: &str,
+	slug_arg: Option<&str>,
+	date_arg: Option<&str>,
+	draft: bool,
+	tags: &[String],
+) -> Result<()> {
 	let title = title.trim();
 	if title.is_empty() {
 		bail!("title cannot be empty");
@@ -93,6 +103,7 @@ pub fn run(
 		date: date_str.clone(),
 		draft,
 		tags: tag_names,
+		image: String::new(),
 		content: "page.md".to_string(),
 	};
 	let meta = toml::to_string_pretty(&page).context("failed to serialize page.toml")?;

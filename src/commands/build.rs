@@ -63,16 +63,20 @@ pub fn run(
 pub fn build(args: &BuildArgs) -> Result<BuildOutcome> {
 	let cwd = std::env::current_dir().context("failed to determine current directory")?;
 	let root = BlogConfig::find_root(&cwd)?;
-	let blog = BlogConfig::load(&root)?;
+	build_in(&root, args)
+}
+
+pub fn build_in(root: &Path, args: &BuildArgs) -> Result<BuildOutcome> {
+	let blog = BlogConfig::load(root)?;
 
 	let output_rel = args
 		.output
 		.clone()
 		.unwrap_or_else(|| blog.build.output.clone());
-	let output = resolve_output(&root, &output_rel)?;
+	let output = resolve_output(root, &output_rel)?;
 	let include_drafts = args.drafts || blog.build.include_drafts;
 
-	let all_pages = load_pages(&root, &output)?;
+	let all_pages = load_pages(root, &output)?;
 	validate_output(&output, args.force)?;
 	let total = all_pages.len();
 	let page_slugs: Vec<String> = all_pages.iter().map(|page| page.slug.clone()).collect();
@@ -86,7 +90,7 @@ pub fn build(args: &BuildArgs) -> Result<BuildOutcome> {
 	let all_page_refs: Vec<&Page> = pages.iter().collect();
 	let listed_pages: Vec<&Page> = pages.iter().filter(|page| !page.is_future(today)).collect();
 
-	let renderer = Renderer::with_root(&root)?;
+	let renderer = Renderer::with_root(root)?;
 
 	let listed_views: Vec<PostView<'_>> = listed_pages
 		.iter()
@@ -95,7 +99,7 @@ pub fn build(args: &BuildArgs) -> Result<BuildOutcome> {
 	let all_tags = tags::unique(&all_page_refs)?;
 	let listed_tags = tags::summarize(&listed_pages)?;
 	let listed_tag_views: Vec<TagView<'_>> = listed_tags.iter().map(TagView::from).collect();
-	let about_content = read_about(&root)?;
+	let about_content = read_about(root)?;
 	let nav = Nav {
 		has_tags: !all_tags.is_empty(),
 		has_about: about_content.is_some(),
@@ -182,7 +186,7 @@ pub fn build(args: &BuildArgs) -> Result<BuildOutcome> {
 		not_found,
 	};
 
-	write_build(&root, staging.path(), &artifacts, &page_slugs, args.verbose)?;
+	write_build(root, staging.path(), &artifacts, &page_slugs, args.verbose)?;
 
 	staging.commit(&output, args.force)?;
 
@@ -739,6 +743,7 @@ mod tests {
 			content_rel: PathBuf::from("page.md"),
 			content_path: dir.join("page.md"),
 			dir,
+			image: String::new(),
 		}
 	}
 
