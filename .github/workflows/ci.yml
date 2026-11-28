@@ -28,6 +28,9 @@ jobs:
         run: cargo fmt --all -- --check
       - name: Clippy
         if: matrix.os == 'ubuntu-latest'
-        run: cargo clippy --locked --all-targets -- -D warnings
+        run: cargo clippy --locked --all-targets --no-default-features -- -D warnings
       - name: Test
-        run: cargo test --locked --all-targets
+        run: cargo test --locked --all-targets --no-default-features
+      - name: Check GUI
+        if: matrix.os != 'ubuntu-latest'
+        run: cargo check --locked --all-targets --features gui
