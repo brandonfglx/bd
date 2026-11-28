@@ -7,7 +7,7 @@
 </div>
 
 > [!NOTE]
-> bd is currently in beta. Some features may not be complete! Check out the change log [here.](./CHANGELOG.md)
+> `bd` is in development. Check out the change log [here.](./CHANGELOG.md)
 
 ## Quick Start
 1. Download the latest release builds [here.](https://github.com/brandonfglx/bd/releases/latest)

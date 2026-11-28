@@ -1,3 +1,12 @@
+# Release v1.0.0
+Here it is: the official non-beta build of `bd`. After an arduous two weeks, I finally got `bd` to the point of somewhat usefulness, with a proper GUI to boot!
+
+What's new:
+ - `bd gui`: a graphical interface to create/load projects, edit files, and publish all without editing manually using other programs (includes a split Markdown previewer)
+ - New templates: in addition to the previous classic template, now there are templates for a grid view and a personal website; change by setting `template` in blog.toml or `bd init --template`
+ - Cover images: pages can now have an optional cover image by setting the `image` property inside page.toml
+ - Slight changes to `preview` to support GUI
+
 # Release v0.1.4
 Provides fixes for `bd publish` not being able to upgrade the `.github/workflows/pages.yml` file after upgrading.
 
